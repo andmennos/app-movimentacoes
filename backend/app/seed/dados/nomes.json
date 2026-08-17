@@ -1,0 +1,15 @@
+{
+  "primeiros_nomes": [
+    "Ana", "Bruno", "Camila", "Daniel", "Eduarda", "Felipe", "Gabriela", "Henrique",
+    "Isabela", "João", "Karina", "Lucas", "Mariana", "Nicolas", "Olívia", "Pedro",
+    "Queila", "Rafael", "Sofia", "Tiago", "Úrsula", "Vitor", "Wesley", "Yasmin",
+    "Alice", "Bernardo", "Clara", "Diego", "Elisa", "Fabio", "Giovana", "Hugo",
+    "Ivana", "Julio", "Larissa", "Marcelo", "Natália", "Otávio", "Paula", "Rodrigo"
+  ],
+  "sobrenomes": [
+    "Almeida", "Barros", "Cardoso", "Duarte", "Esteves", "Farias", "Gonçalves",
+    "Henriques", "Ibrahim", "Junqueira", "Lacerda", "Martins", "Nogueira", "Oliveira",
+    "Pereira", "Queiroz", "Ramalho", "Siqueira", "Teixeira", "Uchoa", "Vasconcelos",
+    "Xavier", "Zambrano", "Amaral", "Borges", "Correia", "Dantas", "Espindola"
+  ]
+}

@@ -1,0 +1,16 @@
+.topo-app {
+  background: var(--cor-superficie);
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.topo-conteudo {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
+}
+
+.marca {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--cor-primaria-escura);
+}

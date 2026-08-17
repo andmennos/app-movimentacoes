@@ -1,0 +1,12 @@
+@if (inconsistencias.length === 0) {
+  <div class="sem-inconsistencias">Nenhuma inconsistência encontrada.</div>
+} @else {
+  <ul class="lista-inconsistencias">
+    @for (inc of inconsistencias; track inc.codigo + inc.mensagem) {
+      <li class="item-inconsistencia">
+        <span class="codigo">{{ inc.codigo }}</span>
+        <span class="mensagem">{{ inc.mensagem }}</span>
+      </li>
+    }
+  </ul>
+}

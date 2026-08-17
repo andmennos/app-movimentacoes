@@ -1,0 +1,154 @@
+<div class="pagina">
+  <a routerLink="/" class="voltar">← Voltar à listagem</a>
+
+  @if (carregando()) {
+    <div class="estado estado-carregando" role="status">Carregando movimentação…</div>
+  } @else if (erro()) {
+    <div class="estado estado-erro" role="alert">
+      {{ erro() }}
+      <button type="button" (click)="carregar()">Tentar novamente</button>
+    </div>
+  } @else if (movimentacao()) {
+    @let mov = movimentacao()!;
+    <header class="cabecalho">
+      <h1>Movimentação #{{ mov.id }}</h1>
+      <div class="badges-cabecalho">
+        <span class="badge" [class]="'badge-' + mov.status">{{ statusLabel[mov.status] }}</span>
+        <span class="tipo">{{ mov.tipo }}</span>
+      </div>
+    </header>
+
+    <section class="cartao">
+      <h2>Dados gerais</h2>
+      <dl class="grade-dados">
+        <dt>Colaborador</dt>
+        <dd>
+          {{ mov.colaborador.nome }} ({{ mov.colaborador.matricula }})
+          @if (!mov.colaborador.ativo) {
+            <span class="marcador-inativo">inativo</span>
+          }
+        </dd>
+
+        <dt>Data da solicitação</dt>
+        <dd>{{ mov.dataSolicitacao | date: 'dd/MM/yyyy HH:mm' }}</dd>
+
+        @if (mov.cargoAtual || mov.cargoDestino) {
+          <dt>Cargo atual → destino</dt>
+          <dd>
+            {{ mov.cargoAtual?.nome ?? '—' }} (nível {{ mov.cargoAtual?.nivel ?? '—' }})
+            →
+            {{ mov.cargoDestino?.nome ?? '—' }} (nível {{ mov.cargoDestino?.nivel ?? '—' }})
+          </dd>
+        }
+
+        @if (mov.departamentoOrigem || mov.departamentoDestino) {
+          <dt>Departamento origem → destino</dt>
+          <dd>
+            {{ mov.departamentoOrigem?.nome ?? '—' }} → {{ mov.departamentoDestino?.nome ?? '—' }}
+          </dd>
+        }
+
+        @if (mov.centroCustoOrigem || mov.centroCustoDestino) {
+          <dt>Centro de custo origem → destino</dt>
+          <dd>
+            {{ mov.centroCustoOrigem?.nome ?? '—' }} → {{ mov.centroCustoDestino?.nome ?? '—' }}
+          </dd>
+        }
+
+        @if (mov.estruturaOrigem || mov.estruturaDestino) {
+          <dt>Estrutura origem → destino</dt>
+          <dd>
+            {{ mov.estruturaOrigem?.nome ?? '—' }} → {{ mov.estruturaDestino?.nome ?? '—' }}
+          </dd>
+        }
+
+        @if (mov.gestorOrigem || mov.gestorDestino) {
+          <dt>Gestor atual → novo gestor</dt>
+          <dd>
+            {{ mov.gestorOrigem?.nome ?? '—' }} → {{ mov.gestorDestino?.nome ?? '—' }}
+          </dd>
+        }
+      </dl>
+    </section>
+
+    <section class="cartao">
+      <h2>Aprovações</h2>
+      @if (mov.aprovacoes.length === 0) {
+        <p class="texto-suave">Nenhuma aprovação registrada.</p>
+      } @else {
+        <table class="tabela-aprovacoes">
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Estado</th>
+              <th>Aprovador</th>
+              <th>Data da decisão</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (aprovacao of mov.aprovacoes; track aprovacao.tipo) {
+              <tr>
+                <td>{{ aprovacao.tipo }}</td>
+                <td><span class="badge" [class]="'badge-' + aprovacao.estado">{{ aprovacao.estado }}</span></td>
+                <td>{{ aprovacao.aprovador?.nome ?? '—' }}</td>
+                <td>{{ aprovacao.dataDecisao ? (aprovacao.dataDecisao | date: 'dd/MM/yyyy HH:mm') : '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+
+    @if (mov.status === 'APROVADA') {
+      <section class="cartao">
+        <h2>Histórico da solicitação</h2>
+        <p class="texto-suave nota-automatica">
+          A validação é executada automaticamente pelo backend assim que as aprovações exigidas são concluídas. Esta solicitação já foi aprovada — a linha do tempo abaixo mostra todo o processamento, não só o resultado da validação.
+        </p>
+        <ol class="linha-do-tempo">
+          @for (evento of historico(mov); track evento.rotulo + evento.dataHora) {
+            <li [class.ilustrativo]="evento.ilustrativo">
+              <span class="linha-do-tempo-data">{{ evento.dataHora | date: 'dd/MM/yyyy HH:mm' }}</span>
+              <span class="linha-do-tempo-rotulo">
+                {{ evento.rotulo }}
+                @if (evento.ilustrativo) {
+                  <span class="marcador-ilustrativo">cenário ilustrativo — fora do escopo deste MVP</span>
+                }
+              </span>
+            </li>
+          }
+        </ol>
+      </section>
+    } @else {
+      <section class="cartao">
+        <h2>Última validação</h2>
+        <p class="texto-suave nota-automatica">
+          A validação é executada automaticamente pelo backend assim que as aprovações exigidas são concluídas — este portal relata o resultado e, se necessário, permite validar sob demanda.
+        </p>
+
+        @if (mov.ultimaValidacao; as ultima) {
+          <p class="resumo-ultima-validacao">
+            Resultado:
+            <span class="badge" [class]="'badge-' + ultima.resultado">{{ resultadoLabel[ultima.resultado] }}</span>
+            em {{ ultima.validadoEm | date: 'dd/MM/yyyy HH:mm' }}
+          </p>
+          <app-inconsistencias [inconsistencias]="ultima.inconsistencias" />
+        } @else {
+          <p class="texto-suave estado-aguardando">{{ mensagemSemValidacao(mov.status) }}</p>
+        }
+
+        @if (podeValidarManualmente(mov.status)) {
+          <div class="acao-validar-manual">
+            <button type="button" class="primario" (click)="validarAgora()" [disabled]="validando()">
+              {{ validando() ? 'Validando…' : 'Validar agora' }}
+            </button>
+            <span class="texto-suave nota-manual">Roda a validação na hora, mesmo que o Worker automático esteja parado.</span>
+          </div>
+          @if (erroValidacaoManual()) {
+            <p class="erro-validacao-manual" role="alert">{{ erroValidacaoManual() }}</p>
+          }
+        }
+      </section>
+    }
+  }
+</div>

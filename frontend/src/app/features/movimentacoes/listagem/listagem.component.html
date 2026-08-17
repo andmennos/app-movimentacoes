@@ -1,0 +1,83 @@
+<div class="pagina">
+  <header class="cabecalho">
+    <h1>Movimentações</h1>
+  </header>
+
+  <div class="filtros">
+    <input
+      type="text"
+      class="campo-busca"
+      placeholder="Buscar por matrícula ou nome do colaborador"
+      [ngModel]="busca"
+      (ngModelChange)="onBuscaMudou($event)"
+      aria-label="Buscar por matrícula ou nome"
+    />
+
+    <select [(ngModel)]="status" (ngModelChange)="onStatusMudou()" aria-label="Filtrar por status">
+      <option value="">Todos os status</option>
+      <option value="PENDENTE">Pendente</option>
+      <option value="APROVADA">Aprovada</option>
+      <option value="REPROVADA">Reprovada</option>
+    </select>
+  </div>
+
+  @if (carregando()) {
+    <div class="estado estado-carregando" role="status">Carregando movimentações…</div>
+  } @else if (erro()) {
+    <div class="estado estado-erro" role="alert">
+      {{ erro() }}
+      <button type="button" (click)="carregar()">Tentar novamente</button>
+    </div>
+  } @else if (items().length === 0) {
+    <div class="estado estado-vazio">Nenhuma movimentação encontrada com os filtros atuais.</div>
+  } @else {
+    <div class="tabela-container">
+      <table class="tabela">
+        <thead>
+          <tr>
+            @for (campo of campos; track campo.valor) {
+              <th (click)="ordenarPorCampo(campo.valor)" class="ordenavel">
+                {{ campo.rotulo }}
+                @if (ordenarPor === campo.valor) {
+                  <span class="seta">{{ direcao === 'asc' ? '▲' : '▼' }}</span>
+                }
+              </th>
+            }
+            <th>Última validação</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of items(); track item.id) {
+            <tr (click)="abrirDetalhe(item)" class="linha-clicavel">
+              <td>{{ item.dataSolicitacao | date: 'dd/MM/yyyy HH:mm' }}</td>
+              <td>{{ item.tipo }}</td>
+              <td><span class="badge" [class]="'badge-' + item.status">{{ statusLabel[item.status] }}</span></td>
+              <td>{{ item.colaborador.nome }} ({{ item.colaborador.matricula }})</td>
+              <td>
+                @if (item.resultadoUltimaValidacao) {
+                  <span class="badge" [class]="'badge-' + item.resultadoUltimaValidacao">
+                    {{ resultadoLabel[item.resultadoUltimaValidacao] }}
+                  </span>
+                } @else {
+                  <span class="texto-suave">{{ textoSemValidacao(item) }}</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="paginacao">
+      <span class="resumo-paginacao">
+        Página {{ page() }} de {{ totalPages() }} — {{ total() }} movimentações
+      </span>
+      <div class="controles-paginacao">
+        <button type="button" (click)="irParaPagina(page() - 1)" [disabled]="page() <= 1">Anterior</button>
+        <button type="button" (click)="irParaPagina(page() + 1)" [disabled]="page() >= totalPages()">
+          Próxima
+        </button>
+      </div>
+    </div>
+  }
+</div>

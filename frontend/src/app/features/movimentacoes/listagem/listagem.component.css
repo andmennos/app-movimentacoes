@@ -1,0 +1,93 @@
+.pagina {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.cabecalho {
+  margin-bottom: 1rem;
+}
+
+.filtros {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.campo-busca {
+  flex: 1;
+  min-width: 240px;
+}
+
+.tabela-container {
+  background: var(--cor-superficie);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio);
+  overflow-x: auto;
+  box-shadow: var(--sombra);
+}
+
+.tabela {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+
+.tabela th,
+.tabela td {
+  text-align: left;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--cor-borda);
+  white-space: nowrap;
+}
+
+.tabela th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--cor-texto-suave);
+  background: #fafbfc;
+  position: sticky;
+  top: 0;
+}
+
+.tabela th.ordenavel {
+  cursor: pointer;
+  user-select: none;
+}
+
+.tabela th.ordenavel:hover {
+  color: var(--cor-primaria);
+}
+
+.seta {
+  margin-left: 0.25rem;
+}
+
+.linha-clicavel {
+  cursor: pointer;
+}
+
+.linha-clicavel:hover {
+  background: #f7f9ff;
+}
+
+.paginacao {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.resumo-paginacao {
+  color: var(--cor-texto-suave);
+  font-size: 0.85rem;
+}
+
+.controles-paginacao {
+  display: flex;
+  gap: 0.5rem;
+}
