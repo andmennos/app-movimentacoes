@@ -1,0 +1,108 @@
+.pagina {
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.cabecalho {
+  margin-bottom: 1rem;
+}
+
+.filtros {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.campo-busca {
+  flex: 1;
+  min-width: 240px;
+}
+
+.tabela-container {
+  background: var(--cor-superficie);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio);
+  overflow-x: auto;
+  box-shadow: var(--sombra);
+}
+
+.tabela {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1100px;
+}
+
+.tabela th,
+.tabela td {
+  text-align: center;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--cor-borda);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.tabela th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--cor-texto-suave);
+  background: #fafbfc;
+  position: sticky;
+  top: 0;
+}
+
+.tabela th.ordenavel {
+  cursor: pointer;
+  user-select: none;
+}
+
+.tabela th.ordenavel:hover {
+  color: var(--cor-primaria);
+}
+
+.seta {
+  margin-left: 0.25rem;
+}
+
+.tipo-movimentacao {
+  display: block;
+  color: var(--cor-texto-suave);
+  font-size: 0.75rem;
+  margin-top: 0.2rem;
+}
+
+.celula-justificativa {
+  white-space: normal;
+  min-width: 200px;
+  text-align: left;
+}
+
+.celula-justificativa textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.82rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--raio);
+  border: 1px solid var(--cor-borda);
+  resize: vertical;
+}
+
+.rotulo-oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.erro-decisao {
+  color: var(--cor-reprovada-fg);
+  font-size: 0.8rem;
+  margin: 0.35rem 0 0 0;
+}
+
+.celula-acoes {
+  display: flex;
+  gap: 0.5rem;
+}

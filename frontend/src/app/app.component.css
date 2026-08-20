@@ -7,10 +7,48 @@
   max-width: 1100px;
   margin: 0 auto;
   padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .marca {
   font-weight: 700;
   font-size: 1.05rem;
   color: var(--cor-primaria-escura);
+}
+
+.menu {
+  display: flex;
+  gap: 1rem;
+  flex: 1;
+}
+
+.menu a {
+  color: var(--cor-texto);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.menu a:hover {
+  color: var(--cor-primaria);
+}
+
+.menu a.ativo {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--cor-primaria-escura);
+}
+
+.sessao {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.usuario-logado {
+  color: var(--cor-texto-suave);
+  font-size: 0.82rem;
 }

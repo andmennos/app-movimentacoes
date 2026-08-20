@@ -1,14 +1,17 @@
 """Fluxo completo via `POST /validar` — o adaptador síncrono técnico (spec
-§7.3, RC-15): listar → detalhar → validar → auditoria persistida → detalhe
-reflete a última validação. Um cenário por tipo de movimentação; ao menos um
-cenário por resultado possível.
+§8.3): listar → detalhar → validar → auditoria persistida → detalhe reflete
+a última validação. Um cenário por tipo de movimentação; ao menos um cenário
+por resultado possível.
 
 Este arquivo testa o contrato do endpoint em si (exigido pelo case, coberto
 no Swagger) — não o fluxo normal do produto. O gatilho automático
 (seed → producer → `JobValidacao` → Worker) tem cobertura própria em
-`test_fluxo_automatico.py`; o Angular nunca chama `POST /validar`
-(`tests/api/test_movimentacoes_api.py`, frontend `*.spec.ts`).
+`test_fluxo_automatico.py`; o Angular nunca chama `POST /validar` fora do
+botão manual condicional (`tests/api/test_movimentacoes_api.py`, frontend
+`*.spec.ts`).
 """
+
+import pytest
 
 from app.models import EstadoAprovacao, TipoMovimentacao
 from tests.builders import (
@@ -18,6 +21,8 @@ from tests.builders import (
     MovimentacaoBuilder,
     criar_aprovacoes_exigidas,
 )
+
+pytestmark = pytest.mark.usefixtures("admin_headers")
 
 
 def _transferencia_valida(db_session):
@@ -43,25 +48,44 @@ def _fluxo(client, db_session, mov, estado_aprovacoes=EstadoAprovacao.APROVADA):
     assert detalhe_antes.json()["ultimaValidacao"] is None
 
     resultado_validar = client.post("/validar", json={"movimentacaoId": mov.id})
-    assert resultado_validar.status_code == 200
 
-    detalhe_depois = client.get(f"/movimentacoes/{mov.id}")
-    assert detalhe_depois.status_code == 200
-    assert detalhe_depois.json()["ultimaValidacao"]["resultado"] == resultado_validar.json()["status"]
+    if resultado_validar.status_code == 200:
+        detalhe_depois = client.get(f"/movimentacoes/{mov.id}")
+        assert detalhe_depois.status_code == 200
+        assert detalhe_depois.json()["ultimaValidacao"]["resultado"] == resultado_validar.json()["status"]
 
-    return resultado_validar.json()["status"]
+    return resultado_validar
 
 
 def test_fluxo_completo_transferencia_aprovada(client, db_session):
     mov = _transferencia_valida(db_session)
-    resultado = _fluxo(client, db_session, mov)
-    assert resultado == "APROVADA"
+    resposta = _fluxo(client, db_session, mov)
+    assert resposta.status_code == 200
+    assert resposta.json()["status"] == "APROVADA"
 
 
-def test_fluxo_completo_transferencia_aguardando_aprovacao(client, db_session):
+def test_fluxo_completo_transferencia_com_aprovacao_pendente_retorna_409(client, db_session):
     mov = _transferencia_valida(db_session)
-    resultado = _fluxo(client, db_session, mov, estado_aprovacoes=EstadoAprovacao.PENDENTE)
-    assert resultado == "AGUARDANDO_APROVACAO"
+    resposta = _fluxo(client, db_session, mov, estado_aprovacoes=EstadoAprovacao.PENDENTE)
+    assert resposta.status_code == 409
+    corpo = resposta.json()
+    assert corpo["erro"]["codigo"] == "VALIDACAO_MANUAL_NAO_PERMITIDA"
+    assert any(i["codigo"] == "APROVACAO_PENDENTE" for i in corpo["impedimentos"])
+
+    detalhe = client.get(f"/movimentacoes/{mov.id}")
+    assert detalhe.json()["status"] == "AGUARDANDO_APROVACAO"
+
+
+def test_fluxo_completo_transferencia_com_aprovacao_reprovada_retorna_409(client, db_session):
+    mov = _transferencia_valida(db_session)
+    resposta = _fluxo(client, db_session, mov, estado_aprovacoes=EstadoAprovacao.REPROVADA)
+    assert resposta.status_code == 409
+    corpo = resposta.json()
+    assert corpo["erro"]["codigo"] == "VALIDACAO_MANUAL_NAO_PERMITIDA"
+    assert any(i["codigo"] == "APROVACAO_REPROVADA" for i in corpo["impedimentos"])
+
+    detalhe = client.get(f"/movimentacoes/{mov.id}")
+    assert detalhe.json()["status"] == "BLOQUEADA"
 
 
 def test_fluxo_completo_promocao_reprovada_por_defeito(client, db_session):
@@ -76,24 +100,28 @@ def test_fluxo_completo_promocao_reprovada_por_defeito(client, db_session):
         cargo_destino_id=cargo_baixo.id,  # P03: nível não superior
     ).build(db_session)
 
-    resultado = _fluxo(client, db_session, mov)
+    resposta = _fluxo(client, db_session, mov)
 
-    assert resultado == "REPROVADA"
+    assert resposta.status_code == 200
+    assert resposta.json()["status"] == "REPROVADA"
 
 
 def test_fluxo_completo_troca_gestor_aprovada(client, db_session):
     gestor_ativo = ColaboradorBuilder().build(db_session)
     cargo_gestor = CargoBuilder(permite_gestao=True).build(db_session)
     novo_gestor = ColaboradorBuilder(cargo_id=cargo_gestor.id).build(db_session)
+    colaborador = ColaboradorBuilder(gestor_id=gestor_ativo.id).build(db_session)
     mov = MovimentacaoBuilder(
         tipo=TipoMovimentacao.TROCA_GESTOR,
+        colaborador_id=colaborador.id,
         gestor_origem_id=gestor_ativo.id,
         gestor_destino_id=novo_gestor.id,
     ).build(db_session)
 
-    resultado = _fluxo(client, db_session, mov)
+    resposta = _fluxo(client, db_session, mov)
 
-    assert resultado == "APROVADA"
+    assert resposta.status_code == 200
+    assert resposta.json()["status"] == "APROVADA"
 
 
 def test_fluxo_completo_centro_custo_aprovada(client, db_session):
@@ -105,9 +133,10 @@ def test_fluxo_completo_centro_custo_aprovada(client, db_session):
         tipo=TipoMovimentacao.MUDANCA_CENTRO_CUSTO, centro_custo_destino_id=cc_destino.id
     ).build(db_session)
 
-    resultado = _fluxo(client, db_session, mov)
+    resposta = _fluxo(client, db_session, mov)
 
-    assert resultado == "APROVADA"
+    assert resposta.status_code == 200
+    assert resposta.json()["status"] == "APROVADA"
 
 
 def test_fluxo_completo_estrutura_aprovada(client, db_session):
@@ -117,6 +146,18 @@ def test_fluxo_completo_estrutura_aprovada(client, db_session):
         db_session
     )
 
-    resultado = _fluxo(client, db_session, mov)
+    resposta = _fluxo(client, db_session, mov)
 
-    assert resultado == "APROVADA"
+    assert resposta.status_code == 200
+    assert resposta.json()["status"] == "APROVADA"
+
+
+def test_segunda_chamada_apos_aprovada_retorna_409_terminal(client, db_session):
+    mov = _transferencia_valida(db_session)
+    primeira = _fluxo(client, db_session, mov)
+    assert primeira.status_code == 200
+
+    segunda = client.post("/validar", json={"movimentacaoId": mov.id})
+
+    assert segunda.status_code == 409
+    assert segunda.json()["erro"]["codigo"] == "VALIDACAO_MANUAL_NAO_PERMITIDA"

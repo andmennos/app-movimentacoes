@@ -81,6 +81,18 @@ button.primario:hover:not(:disabled) {
   color: #fff;
 }
 
+button.perigo {
+  background: var(--cor-reprovada-fg);
+  border-color: var(--cor-reprovada-fg);
+  color: #fff;
+}
+
+button.perigo:hover:not(:disabled) {
+  background: #841a20;
+  border-color: #841a20;
+  color: #fff;
+}
+
 input[type='text'],
 select {
   font-family: inherit;
@@ -115,7 +127,8 @@ a {
   color: var(--cor-aprovada-fg);
 }
 
-.badge-REPROVADA {
+.badge-REPROVADA,
+.badge-BLOQUEADA {
   background: var(--cor-reprovada-bg);
   color: var(--cor-reprovada-fg);
 }

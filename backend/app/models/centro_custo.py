@@ -13,6 +13,10 @@ class CentroCusto(Base):
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     responsavel_id: Mapped[int | None] = mapped_column(ForeignKey("colaborador.id"), nullable=True)
     estrutura_id: Mapped[int] = mapped_column(ForeignKey("estrutura_organizacional.id"), nullable=False)
+    orcamento_mensal: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    """spec.md §9.2/§11 — em centavos (mesma unidade de `Cargo.custo_mensal_referencia`)."""
+    custo_comprometido: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    """spec.md §9.2 — saldo_disponivel = orcamento_mensal - custo_comprometido."""
 
     responsavel: Mapped["Colaborador | None"] = relationship(foreign_keys=[responsavel_id])
     estrutura: Mapped["EstruturaOrganizacional"] = relationship(foreign_keys=[estrutura_id])

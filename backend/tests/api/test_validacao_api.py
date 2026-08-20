@@ -1,5 +1,9 @@
+import pytest
+
 from app.models import TipoMovimentacao
 from tests.builders import ColaboradorBuilder, DepartamentoBuilder, MovimentacaoBuilder, criar_aprovacoes_exigidas
+
+pytestmark = pytest.mark.usefixtures("admin_headers")
 
 
 def _transferencia_valida(db_session):
@@ -12,11 +16,20 @@ def _transferencia_valida(db_session):
     ).build(db_session)
 
 
-def test_ca009_ca011_retorna_todas_as_inconsistencias_com_campos_completos(client, db_session):
-    dep_destino = DepartamentoBuilder(ativo=False).build(db_session)
-    mov = MovimentacaoBuilder(
-        tipo=TipoMovimentacao.TRANSFERENCIA, departamento_destino_id=dep_destino.id
+def test_retorna_todas_as_inconsistencias_com_campos_completos(client, db_session):
+    """Aprovações concluídas (gate apto) e um único defeito de negócio (T04):
+    a engine roda e reprova — isso não é mais confundido com aprovação
+    pendente/reprovada (spec RC-22)."""
+    dep_origem = DepartamentoBuilder(gestor_id=ColaboradorBuilder().build(db_session).id).build(db_session)
+    dep_destino = DepartamentoBuilder(
+        ativo=False, gestor_id=ColaboradorBuilder().build(db_session).id
     ).build(db_session)
+    mov = MovimentacaoBuilder(
+        tipo=TipoMovimentacao.TRANSFERENCIA,
+        departamento_origem_id=dep_origem.id,
+        departamento_destino_id=dep_destino.id,
+    ).build(db_session)
+    criar_aprovacoes_exigidas(db_session, mov)
     db_session.commit()
 
     resposta = client.post("/validar", json={"movimentacaoId": mov.id})
@@ -30,7 +43,7 @@ def test_ca009_ca011_retorna_todas_as_inconsistencias_com_campos_completos(clien
         assert inc["severidade"] == "ERRO"
 
 
-def test_ca014_status_e_resultado_atualizados_apos_validar(client, db_session):
+def test_status_e_resultado_atualizados_apos_validar(client, db_session):
     mov = _transferencia_valida(db_session)
     criar_aprovacoes_exigidas(db_session, mov)
     db_session.commit()
@@ -47,7 +60,7 @@ def test_ca014_status_e_resultado_atualizados_apos_validar(client, db_session):
     assert corpo["ultimaValidacao"]["inconsistencias"] == []
 
 
-def test_ca015_404_ao_validar_id_inexistente(client):
+def test_404_ao_validar_id_inexistente(client):
     resposta = client.post("/validar", json={"movimentacaoId": 999999})
     assert resposta.status_code == 404
     assert resposta.json()["erro"]["codigo"] == "MOVIMENTACAO_NAO_ENCONTRADA"
@@ -59,7 +72,7 @@ def test_422_payload_invalido(client):
     assert resposta.json()["erro"]["codigo"] == "PAYLOAD_INVALIDO"
 
 
-def test_ca012_cria_exatamente_um_registro_de_auditoria(client, db_session):
+def test_cria_exatamente_um_registro_de_auditoria(client, db_session):
     mov = _transferencia_valida(db_session)
     criar_aprovacoes_exigidas(db_session, mov)
     db_session.commit()
@@ -72,17 +85,45 @@ def test_ca012_cria_exatamente_um_registro_de_auditoria(client, db_session):
     assert total == 1
 
 
-def test_500_erro_interno_em_excecao_nao_tratada(client, db_session, monkeypatch):
-    # `client` (fixture) usa raise_server_exceptions=True, útil para pegar bugs
-    # reais durante o desenvolvimento. Este teste verifica especificamente o
-    # contrato HTTP de erro (spec §8.4), então precisa que a exceção vire uma
-    # resposta 500 em vez de propagar no processo de teste — daí um TestClient
-    # local com raise_server_exceptions=False, reaproveitando o override de
-    # sessão já configurado pela fixture `client`.
-    from fastapi.testclient import TestClient
+def test_409_aprovacao_pendente_nao_executa_engine(client, db_session):
+    from app.models import EstadoAprovacao
 
-    from app.main import app
+    mov = _transferencia_valida(db_session)
+    criar_aprovacoes_exigidas(db_session, mov, estado=EstadoAprovacao.PENDENTE)
+    db_session.commit()
 
+    resposta = client.post("/validar", json={"movimentacaoId": mov.id})
+
+    assert resposta.status_code == 409
+    corpo = resposta.json()
+    assert corpo["erro"]["codigo"] == "VALIDACAO_MANUAL_NAO_PERMITIDA"
+    assert len(corpo["impedimentos"]) >= 1
+
+    from app.models import ValidacaoAuditoria
+
+    assert db_session.query(ValidacaoAuditoria).filter_by(movimentacao_id=mov.id).count() == 0
+
+
+def test_409_job_processando_saudavel(client, db_session):
+    from datetime import datetime, timezone
+
+    from app.repositories import job_validacao_repository as job_repo
+
+    mov = _transferencia_valida(db_session)
+    criar_aprovacoes_exigidas(db_session, mov)
+    db_session.commit()
+    job = job_repo.criar(db_session, mov.id, datetime(2026, 1, 1))
+    db_session.commit()
+    agora = datetime.now(timezone.utc).replace(tzinfo=None)
+    job_repo.tentar_adquirir(db_session, job.id, agora)
+
+    resposta = client.post("/validar", json={"movimentacaoId": mov.id})
+
+    assert resposta.status_code == 409
+    assert resposta.json()["erro"]["codigo"] == "VALIDACAO_EM_ANDAMENTO"
+
+
+def test_500_erro_interno_em_falha_tecnica_nao_tratada(client, db_session, monkeypatch):
     mov = _transferencia_valida(db_session)
     criar_aprovacoes_exigidas(db_session, mov)
     db_session.commit()
@@ -94,12 +135,11 @@ def test_500_erro_interno_em_excecao_nao_tratada(client, db_session, monkeypatch
 
     monkeypatch.setattr(validacao_service, "executar", quebrar)
 
-    with TestClient(app, raise_server_exceptions=False) as client_tolerante:
-        resposta = client_tolerante.post("/validar", json={"movimentacaoId": mov.id})
+    resposta = client.post("/validar", json={"movimentacaoId": mov.id})
 
-        assert resposta.status_code == 500
-        assert resposta.json()["erro"]["codigo"] == "ERRO_INTERNO"
+    assert resposta.status_code == 500
+    assert resposta.json()["erro"]["codigo"] == "ERRO_INTERNO"
 
-        detalhe = client_tolerante.get(f"/movimentacoes/{mov.id}")
-        assert detalhe.json()["status"] == "PENDENTE"
-        assert detalhe.json()["ultimaValidacao"] is None
+    detalhe = client.get(f"/movimentacoes/{mov.id}")
+    assert detalhe.json()["status"] == "PENDENTE"
+    assert detalhe.json()["ultimaValidacao"] is None

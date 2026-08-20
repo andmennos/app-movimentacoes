@@ -5,7 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import app.models  # noqa: F401 — registra as entidades em Base.metadata
 from app.api.errors import registrar_handlers
-from app.api.routers import movimentacoes, validacao
+from app.api.middleware import HardeningMiddleware
+from app.api.routers import aprovacoes, auth, colaboradores, movimentacoes, referencias, validacao
 from app.database import Base, engine
 
 
@@ -22,14 +23,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(HardeningMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:4200"],
     allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 registrar_handlers(app)
 
+app.include_router(auth.router)
 app.include_router(movimentacoes.router)
+app.include_router(aprovacoes.router)
+app.include_router(colaboradores.router)
+app.include_router(referencias.router)
 app.include_router(validacao.router)

@@ -4,7 +4,7 @@ from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-from app.models.enums import ResultadoValidacao, Severidade
+from app.models.enums import OrigemExecucao, ResultadoValidacao, Severidade
 
 
 class ValidacaoAuditoria(Base):
@@ -21,8 +21,17 @@ class ValidacaoAuditoria(Base):
     )
     total_inconsistencias: Mapped[int] = mapped_column(Integer, nullable=False)
     versao_motor: Mapped[str] = mapped_column(String, nullable=False)
+    origem_execucao: Mapped[OrigemExecucao] = mapped_column(
+        Enum(OrigemExecucao, native_enum=False), nullable=False
+    )
+    solicitante_usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuario.id"), nullable=True)
+    """spec.md §7.3 — rastreável mesmo quando a execução é AUTOMATICO."""
+    ator_usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuario.id"), nullable=True)
+    """spec.md §7.3 — nulo/SISTEMA quando `origem_execucao == AUTOMATICO`."""
 
     inconsistencias: Mapped[list["InconsistenciaAuditoria"]] = relationship(back_populates="validacao")
+    solicitante: Mapped["Usuario | None"] = relationship(foreign_keys=[solicitante_usuario_id])
+    ator: Mapped["Usuario | None"] = relationship(foreign_keys=[ator_usuario_id])
 
 
 class InconsistenciaAuditoria(Base):

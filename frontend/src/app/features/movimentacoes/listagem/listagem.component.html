@@ -7,17 +7,19 @@
     <input
       type="text"
       class="campo-busca"
-      placeholder="Buscar por matrícula ou nome do colaborador"
+      placeholder="Buscar por ID, matrícula ou nome do colaborador"
       [ngModel]="busca"
       (ngModelChange)="onBuscaMudou($event)"
-      aria-label="Buscar por matrícula ou nome"
+      aria-label="Buscar por ID, matrícula ou nome"
     />
 
     <select [(ngModel)]="status" (ngModelChange)="onStatusMudou()" aria-label="Filtrar por status">
       <option value="">Todos os status</option>
+      <option value="AGUARDANDO_APROVACAO">Aguardando aprovação</option>
       <option value="PENDENTE">Pendente</option>
       <option value="APROVADA">Aprovada</option>
       <option value="REPROVADA">Reprovada</option>
+      <option value="BLOQUEADA">Bloqueada</option>
     </select>
   </div>
 
@@ -35,6 +37,7 @@
       <table class="tabela">
         <thead>
           <tr>
+            <th>ID</th>
             @for (campo of campos; track campo.valor) {
               <th (click)="ordenarPorCampo(campo.valor)" class="ordenavel">
                 {{ campo.rotulo }}
@@ -44,11 +47,13 @@
               </th>
             }
             <th>Última validação</th>
+            <th>Motivo</th>
           </tr>
         </thead>
         <tbody>
           @for (item of items(); track item.id) {
             <tr (click)="abrirDetalhe(item)" class="linha-clicavel">
+              <td>{{ item.id }}</td>
               <td>{{ item.dataSolicitacao | date: 'dd/MM/yyyy HH:mm' }}</td>
               <td>{{ item.tipo }}</td>
               <td><span class="badge" [class]="'badge-' + item.status">{{ statusLabel[item.status] }}</span></td>
@@ -59,9 +64,10 @@
                     {{ resultadoLabel[item.resultadoUltimaValidacao] }}
                   </span>
                 } @else {
-                  <span class="texto-suave">{{ textoSemValidacao(item) }}</span>
+                  <span class="texto-suave">—</span>
                 }
               </td>
+              <td class="celula-motivo" [title]="item.motivoResumo">{{ item.motivoResumo }}</td>
             </tr>
           }
         </tbody>

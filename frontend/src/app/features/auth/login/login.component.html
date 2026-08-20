@@ -1,0 +1,36 @@
+<div class="pagina-login">
+  <form class="cartao-login" (ngSubmit)="entrar()" autocomplete="off">
+    <h1>Portal de Mobilidade Organizacional</h1>
+    <p class="subtitulo">Entre com seu usuário e senha para continuar.</p>
+
+    <label for="username">Usuário</label>
+    <input
+      id="username"
+      type="text"
+      name="username"
+      [(ngModel)]="username"
+      required
+      autocomplete="username"
+      [disabled]="entrando()"
+    />
+
+    <label for="password">Senha</label>
+    <input
+      id="password"
+      type="password"
+      name="password"
+      [(ngModel)]="password"
+      required
+      autocomplete="current-password"
+      [disabled]="entrando()"
+    />
+
+    @if (erro()) {
+      <p class="erro-login" role="alert">{{ erro() }}</p>
+    }
+
+    <button type="submit" class="primario" [disabled]="entrando() || !username || !password">
+      {{ entrando() ? 'Entrando…' : 'Entrar' }}
+    </button>
+  </form>
+</div>

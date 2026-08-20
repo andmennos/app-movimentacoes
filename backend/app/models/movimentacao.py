@@ -18,7 +18,7 @@ class Movimentacao(Base):
     status: Mapped[StatusMovimentacao] = mapped_column(
         Enum(StatusMovimentacao, native_enum=False),
         nullable=False,
-        default=StatusMovimentacao.PENDENTE,
+        default=StatusMovimentacao.AGUARDANDO_APROVACAO,
         index=True,
     )
     colaborador_id: Mapped[int] = mapped_column(
@@ -46,7 +46,16 @@ class Movimentacao(Base):
     )
     data_ultima_validacao: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    solicitante_usuario_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id"), nullable=True, index=True
+    )
+    """spec.md §7.1/RC-22. Nullable: solicitações fictícias do seed
+    representam processos anteriores sem usuário autenticado do MVP
+    associado (docstring de app.seed.seed); solicitações criadas via
+    `POST /movimentacoes` (T-60+) sempre preenchem a partir do JWT."""
+
     colaborador: Mapped["Colaborador"] = relationship(foreign_keys=[colaborador_id])
+    solicitante: Mapped["Usuario | None"] = relationship(foreign_keys=[solicitante_usuario_id])
     departamento_origem: Mapped["Departamento | None"] = relationship(foreign_keys=[departamento_origem_id])
     departamento_destino: Mapped["Departamento | None"] = relationship(foreign_keys=[departamento_destino_id])
     cargo_origem: Mapped["Cargo | None"] = relationship(foreign_keys=[cargo_origem_id])

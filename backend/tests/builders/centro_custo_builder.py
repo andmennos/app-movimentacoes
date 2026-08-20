@@ -13,6 +13,8 @@ class CentroCustoBuilder:
             ativo=True,
             responsavel_id=None,
             estrutura_id=None,
+            orcamento_mensal=0,
+            custo_comprometido=0,
         )
         self.dados.update(overrides)
 

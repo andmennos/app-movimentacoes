@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import inspect
 
@@ -34,6 +34,25 @@ def test_criar_job(db_session):
     assert job.movimentacao_id == mov.id
 
 
+def test_obter_ou_criar_reaproveita_job_existente(db_session):
+    mov = MovimentacaoBuilder().build(db_session)
+    primeiro = repo.criar(db_session, mov.id, datetime(2026, 1, 1))
+    db_session.commit()
+
+    obtido = repo.obter_ou_criar(db_session, mov.id, datetime(2026, 1, 2))
+
+    assert obtido.id == primeiro.id
+
+
+def test_obter_ou_criar_cria_quando_nao_existe(db_session):
+    mov = MovimentacaoBuilder().build(db_session)
+
+    job = repo.obter_ou_criar(db_session, mov.id, datetime(2026, 1, 1))
+
+    assert job.id is not None
+    assert job.status == StatusJob.PENDENTE
+
+
 def test_existe_para_movimentacao(db_session):
     mov = MovimentacaoBuilder().build(db_session)
     assert repo.existe_para_movimentacao(db_session, mov.id) is False
@@ -62,14 +81,48 @@ def test_buscar_pendente_ignora_outros_status(db_session):
     assert repo.buscar_pendente_mais_antigo(db_session) is None
 
 
-def test_marcar_processando_incrementa_tentativa(db_session):
+def test_tentar_adquirir_com_sucesso_marca_processando_e_incrementa(db_session):
     job = JobValidacaoBuilder().build(db_session)
+    db_session.commit()
 
-    repo.marcar_processando(db_session, job, datetime(2026, 1, 1, 10, 0, 0))
+    adquiriu = repo.tentar_adquirir(db_session, job.id, datetime(2026, 1, 1, 10, 0, 0))
 
+    assert adquiriu is True
     assert job.status == StatusJob.PROCESSANDO
     assert job.tentativas == 1
     assert job.iniciado_em == datetime(2026, 1, 1, 10, 0, 0)
+
+
+def test_tentar_adquirir_falha_se_ja_nao_esta_pendente(db_session):
+    job = JobValidacaoBuilder(status=StatusJob.PROCESSANDO).build(db_session)
+    db_session.commit()
+
+    adquiriu = repo.tentar_adquirir(db_session, job.id, datetime(2026, 1, 1))
+
+    assert adquiriu is False
+
+
+def test_tentar_adquirir_e_compare_and_set_segunda_chamada_falha(db_session):
+    """Prova o "compare-and-set": a primeira aquisição sucede; qualquer
+    tentativa seguinte sobre o mesmo job (já não mais PENDENTE) falha —
+    impede que duas origens processem o mesmo job (CN-Q11/CN-Q12)."""
+    job = JobValidacaoBuilder().build(db_session)
+    db_session.commit()
+
+    primeira = repo.tentar_adquirir(db_session, job.id, datetime(2026, 1, 1, 10, 0, 0))
+    segunda = repo.tentar_adquirir(db_session, job.id, datetime(2026, 1, 1, 10, 0, 5))
+
+    assert primeira is True
+    assert segunda is False
+    assert job.tentativas == 1
+
+
+def test_reabrir_volta_para_pendente(db_session):
+    job = JobValidacaoBuilder(status=StatusJob.ERRO).build(db_session)
+
+    repo.reabrir(db_session, job)
+
+    assert job.status == StatusJob.PENDENTE
 
 
 def test_marcar_concluido(db_session):
@@ -98,3 +151,39 @@ def test_marcar_erro_terminal(db_session):
 
     assert job.status == StatusJob.ERRO
     assert job.finalizado_em == datetime(2026, 1, 1, 12)
+
+
+def test_buscar_processando_stale(db_session):
+    agora = datetime(2026, 1, 1, 12, 0, 0)
+    antigo = JobValidacaoBuilder(status=StatusJob.PROCESSANDO, iniciado_em=agora - timedelta(hours=1)).build(
+        db_session
+    )
+    recente = JobValidacaoBuilder(status=StatusJob.PROCESSANDO, iniciado_em=agora - timedelta(seconds=5)).build(
+        db_session
+    )
+    JobValidacaoBuilder(status=StatusJob.PENDENTE).build(db_session)
+
+    stale = repo.buscar_processando_stale(db_session, limite=agora - timedelta(minutes=5))
+
+    ids = {j.id for j in stale}
+    assert antigo.id in ids
+    assert recente.id not in ids
+
+
+def test_marcar_recuperado_volta_pendente_quando_ha_tentativa_disponivel(db_session):
+    job = JobValidacaoBuilder(status=StatusJob.PROCESSANDO, tentativas=1).build(db_session)
+
+    novo_status = repo.marcar_recuperado(db_session, job, datetime(2026, 1, 1), limite_tentativas=3)
+
+    assert novo_status == StatusJob.PENDENTE
+    assert job.status == StatusJob.PENDENTE
+
+
+def test_marcar_recuperado_vai_para_erro_quando_limite_esgotado(db_session):
+    job = JobValidacaoBuilder(status=StatusJob.PROCESSANDO, tentativas=3).build(db_session)
+
+    novo_status = repo.marcar_recuperado(db_session, job, datetime(2026, 1, 1), limite_tentativas=3)
+
+    assert novo_status == StatusJob.ERRO
+    assert job.status == StatusJob.ERRO
+    assert job.finalizado_em == datetime(2026, 1, 1)

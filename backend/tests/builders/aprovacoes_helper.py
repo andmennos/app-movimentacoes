@@ -3,11 +3,15 @@ from app.models import Cargo, EstadoAprovacao, Movimentacao, TipoAprovacao, Tipo
 from .aprovacao_builder import AprovacaoBuilder
 
 EXIGENCIAS_POR_TIPO = {
-    TipoMovimentacao.TRANSFERENCIA: [TipoAprovacao.GESTOR_ORIGEM, TipoAprovacao.GESTOR_DESTINO],
+    # spec.md revisão 2026-08-19 §5.3/§5.5/§5.6/§5.7 — RH passou a integrar
+    # a matriz-base de TRANSFERENCIA/TROCA_GESTOR/MUDANCA_CENTRO_CUSTO/
+    # ALTERACAO_ESTRUTURA (T-63). Equivale a `exigencias_para` sem
+    # solicitante — nenhuma substituição se aplica.
+    TipoMovimentacao.TRANSFERENCIA: [TipoAprovacao.GESTOR_ORIGEM, TipoAprovacao.GESTOR_DESTINO, TipoAprovacao.RH],
     TipoMovimentacao.PROMOCAO: [TipoAprovacao.GESTOR_ORIGEM, TipoAprovacao.RH],
-    TipoMovimentacao.TROCA_GESTOR: [TipoAprovacao.GESTOR_ORIGEM, TipoAprovacao.GESTOR_DESTINO],
-    TipoMovimentacao.MUDANCA_CENTRO_CUSTO: [TipoAprovacao.GESTOR_DESTINO],
-    TipoMovimentacao.ALTERACAO_ESTRUTURA: [TipoAprovacao.GESTOR_ORIGEM],
+    TipoMovimentacao.TROCA_GESTOR: [TipoAprovacao.GESTOR_ORIGEM, TipoAprovacao.GESTOR_DESTINO, TipoAprovacao.RH],
+    TipoMovimentacao.MUDANCA_CENTRO_CUSTO: [TipoAprovacao.GESTOR_DESTINO, TipoAprovacao.RH],
+    TipoMovimentacao.ALTERACAO_ESTRUTURA: [TipoAprovacao.GESTOR_ORIGEM, TipoAprovacao.RH],
 }
 
 

@@ -1,7 +1,10 @@
-import pytest
+"""`services/validacao_service.py` — executa a engine sobre uma movimentação
+já carregada e grava a auditoria (spec.md §7.5). Não decide status de negócio
+nem toca na fila/histórico — isso é do orquestrador (`test_orchestrator.py`).
+"""
 
-from app.models import ResultadoValidacao, StatusMovimentacao, TipoMovimentacao
-from app.repositories import auditoria_repository
+from app.models import OrigemExecucao, ResultadoValidacao, TipoMovimentacao, ValidacaoAuditoria
+from app.repositories import auditoria_repository, movimentacao_repository
 from app.services import validacao_service
 from tests.builders import ColaboradorBuilder, DepartamentoBuilder, MovimentacaoBuilder, criar_aprovacoes_exigidas
 
@@ -16,103 +19,60 @@ def _transferencia_valida(db_session) -> MovimentacaoBuilder:
     ).build(db_session)
 
 
-def test_validar_movimentacao_valida_resulta_aprovada(db_session):
+def test_validar_movimentacao_valida_resulta_aprovada_na_auditoria(db_session):
     mov = _transferencia_valida(db_session)
     criar_aprovacoes_exigidas(db_session, mov)
     db_session.commit()
+    carregada = movimentacao_repository.carregar_para_validacao(db_session, mov.id)
 
-    atualizada, auditoria = validacao_service.validar(db_session, mov.id)
+    auditoria = validacao_service.validar(db_session, carregada, OrigemExecucao.AUTOMATICO)
 
-    assert atualizada.status == StatusMovimentacao.APROVADA
-    assert atualizada.resultado_ultima_validacao == ResultadoValidacao.APROVADA
     assert auditoria.resultado == ResultadoValidacao.APROVADA
     assert auditoria.total_inconsistencias == 0
+    assert auditoria.origem_execucao == OrigemExecucao.AUTOMATICO
+    assert carregada.resultado_ultima_validacao == ResultadoValidacao.APROVADA
 
 
-def test_validar_movimentacao_com_defeito_resulta_reprovada(db_session):
+def test_validar_movimentacao_com_defeito_resulta_reprovada_na_auditoria(db_session):
     dep = DepartamentoBuilder(ativo=False).build(db_session)
     mov = MovimentacaoBuilder(
         tipo=TipoMovimentacao.TRANSFERENCIA, departamento_destino_id=dep.id
     ).build(db_session)
     criar_aprovacoes_exigidas(db_session, mov)
     db_session.commit()
+    carregada = movimentacao_repository.carregar_para_validacao(db_session, mov.id)
 
-    atualizada, auditoria = validacao_service.validar(db_session, mov.id)
+    auditoria = validacao_service.validar(db_session, carregada, OrigemExecucao.AUTOMATICO)
 
-    assert atualizada.status == StatusMovimentacao.REPROVADA
     assert auditoria.resultado == ResultadoValidacao.REPROVADA
     assert auditoria.total_inconsistencias >= 1
 
 
-def test_validar_movimentacao_aguardando_aprovacao(db_session):
-    from app.models import EstadoAprovacao
-
-    mov = _transferencia_valida(db_session)
-    criar_aprovacoes_exigidas(db_session, mov, estado=EstadoAprovacao.PENDENTE)
-    db_session.commit()
-
-    atualizada, auditoria = validacao_service.validar(db_session, mov.id)
-
-    assert atualizada.status == StatusMovimentacao.PENDENTE
-    assert auditoria.resultado == ResultadoValidacao.AGUARDANDO_APROVACAO
-
-
-def test_validar_movimentacao_inexistente_levanta_excecao_dedicada(db_session):
-    with pytest.raises(validacao_service.MovimentacaoNaoEncontrada):
-        validacao_service.validar(db_session, 999999)
-
-
-def test_ca012_cada_post_validar_cria_exatamente_um_registro(db_session):
+def test_cada_chamada_cria_exatamente_um_registro_de_auditoria(db_session):
     mov = MovimentacaoBuilder(tipo=TipoMovimentacao.TRANSFERENCIA).build(db_session)
     criar_aprovacoes_exigidas(db_session, mov)
     db_session.commit()
+    carregada = movimentacao_repository.carregar_para_validacao(db_session, mov.id)
 
-    validacao_service.validar(db_session, mov.id)
-
-    from app.models import ValidacaoAuditoria
+    validacao_service.validar(db_session, carregada, OrigemExecucao.AUTOMATICO)
+    db_session.commit()
 
     total = db_session.query(ValidacaoAuditoria).filter_by(movimentacao_id=mov.id).count()
     assert total == 1
 
 
-def test_ca013_revalidar_cria_novo_registro_sem_alterar_anteriores(db_session):
+def test_revalidar_cria_novo_registro_sem_alterar_anteriores(db_session):
     mov = MovimentacaoBuilder(tipo=TipoMovimentacao.TRANSFERENCIA).build(db_session)
     criar_aprovacoes_exigidas(db_session, mov)
     db_session.commit()
+    carregada = movimentacao_repository.carregar_para_validacao(db_session, mov.id)
 
-    _, primeira = validacao_service.validar(db_session, mov.id)
+    primeira = validacao_service.validar(db_session, carregada, OrigemExecucao.AUTOMATICO)
+    db_session.commit()
     primeira_id = primeira.id
-    _, segunda = validacao_service.validar(db_session, mov.id)
+    segunda = validacao_service.validar(db_session, carregada, OrigemExecucao.MANUAL)
+    db_session.commit()
 
     assert segunda.id != primeira_id
     ainda_la = auditoria_repository.buscar_ultima(db_session, mov.id)
     assert ainda_la.id == segunda.id
-
-    from app.models import ValidacaoAuditoria
-
-    total = db_session.query(ValidacaoAuditoria).filter_by(movimentacao_id=mov.id).count()
-    assert total == 2
-
-
-def test_ca024_excecao_nao_tratada_produz_500_sem_alterar_movimentacao(db_session, monkeypatch):
-    mov = MovimentacaoBuilder(tipo=TipoMovimentacao.TRANSFERENCIA).build(db_session)
-    criar_aprovacoes_exigidas(db_session, mov)
-    db_session.commit()
-    status_original = mov.status
-    resultado_original = mov.resultado_ultima_validacao
-
-    def quebrar(ctx):
-        raise RuntimeError("falha inesperada simulada")
-
-    monkeypatch.setattr(validacao_service, "executar", quebrar)
-
-    with pytest.raises(RuntimeError):
-        validacao_service.validar(db_session, mov.id)
-
-    db_session.rollback()
-    from app.models import Movimentacao, ValidacaoAuditoria
-
-    recarregada = db_session.get(Movimentacao, mov.id)
-    assert recarregada.status == status_original
-    assert recarregada.resultado_ultima_validacao == resultado_original
-    assert db_session.query(ValidacaoAuditoria).filter_by(movimentacao_id=mov.id).count() == 0

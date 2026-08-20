@@ -17,6 +17,9 @@ class Colaborador(Base):
     departamento_id: Mapped[int] = mapped_column(ForeignKey("departamento.id"), nullable=False)
     centro_custo_id: Mapped[int] = mapped_column(ForeignKey("centro_custo.id"), nullable=False)
     gestor_id: Mapped[int | None] = mapped_column(ForeignKey("colaborador.id"), nullable=True)
+    estrutura_id: Mapped[int | None] = mapped_column(
+        ForeignKey("estrutura_organizacional.id"), nullable=True
+    )
     data_admissao: Mapped[date] = mapped_column(Date, nullable=False)
 
     cargo: Mapped["Cargo"] = relationship(foreign_keys=[cargo_id], back_populates="colaboradores")
@@ -29,3 +32,4 @@ class Colaborador(Base):
     gestor: Mapped["Colaborador | None"] = relationship(
         remote_side="Colaborador.id", foreign_keys=[gestor_id]
     )
+    estrutura: Mapped["EstruturaOrganizacional | None"] = relationship(foreign_keys=[estrutura_id])

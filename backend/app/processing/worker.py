@@ -1,81 +1,49 @@
-"""Worker Python — consumer local da fila `JobValidacao` (spec.md §6, §7.5).
+"""Worker Python — consumer local da fila `JobValidacao` (spec.md §7.2/§7.4).
 
 Processo independente, executável via `python -m app.processing.worker`.
-Reutiliza exatamente o `ValidacaoService` usado por `POST /validar` — nenhuma
-das 34 regras é reimplementada aqui (INV-11). Único consumer no MVP: sem
-locking distribuído ou coordenação multi-worker (plan.md §7.5).
+Delega todo o processamento ao orquestrador único (`processing/orchestrator`)
+— o mesmo usado por `POST /validar` (INV-09) — e nunca decide status de
+negócio nem reimplementa nenhuma das 34 regras (INV-11). Único consumer no
+MVP: sem locking distribuído ou coordenação multi-worker.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models import JobValidacao
+from app.models import OrigemExecucao
+from app.processing import orchestrator
 from app.repositories import job_validacao_repository as job_repo
-from app.services import validacao_service
 
 logger = logging.getLogger("app.processing.worker")
-
-LIMITE_TENTATIVAS = 3
-"""Após esgotar as tentativas, o job fica `ERRO` (terminal) em vez de voltar
-para `PENDENTE` — spec.md §7.5. Política simples do MVP, sem backoff."""
 
 INTERVALO_POLLING_SEGUNDOS = 2
 
 
-def _agora() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
 def processar_um_job(session: Session) -> bool:
-    """Consome o job pendente mais antigo, se houver.
+    """Recupera jobs `PROCESSANDO` travados (stale) e, em seguida, consome o
+    job `PENDENTE` mais antigo, se houver, delegando ao orquestrador.
 
-    Sucesso → job `CONCLUIDO`, `ValidacaoService` já gravou auditoria e
-    atualizou a movimentação na mesma transação síncrona de `POST /validar`.
-
-    Falha técnica → nenhuma escrita de negócio permanece (o `ValidacaoService`
-    não commita antes de propagar a exceção — INV-04); o job registra a
-    tentativa e o erro técnico, sem dado sensível, e volta para `PENDENTE`
-    (nova tentativa) ou vai para `ERRO` (tentativas esgotadas).
-
-    Retorna `True` se encontrou e processou um job (sucesso ou falha), `False`
-    se a fila estava vazia.
+    Retorna `True` se encontrou e processou um job (sucesso, reprovação ou
+    falha técnica), `False` se a fila estava vazia.
     """
+    orchestrator.recuperar_jobs_stale(session)
+
     job = job_repo.buscar_pendente_mais_antigo(session)
     if job is None:
         return False
 
-    job_id = job.id
-    movimentacao_id = job.movimentacao_id
-    job_repo.marcar_processando(session, job, _agora())
-
-    try:
-        validacao_service.validar(session, movimentacao_id)
-    except Exception as exc:  # noqa: BLE001 — falha técnica genuína, não de negócio (INV-04)
-        session.rollback()
-        job = session.get(JobValidacao, job_id)
-        mensagem = f"{type(exc).__name__}: {exc}"[:500]
-        logger.error(
-            "job_validacao_falhou job_id=%s movimentacao_id=%s tentativas=%s erro=%s",
-            job_id,
-            movimentacao_id,
-            job.tentativas,
-            mensagem,
-        )
-        if job.tentativas >= LIMITE_TENTATIVAS:
-            job_repo.marcar_erro_terminal(session, job, mensagem, _agora())
-        else:
-            job_repo.marcar_para_nova_tentativa(session, job, mensagem)
-    else:
-        job = session.get(JobValidacao, job_id)
-        job_repo.marcar_concluido(session, job, _agora())
-        logger.info("job_validacao_concluido job_id=%s movimentacao_id=%s", job_id, movimentacao_id)
-
+    resultado = orchestrator.processar(session, job.movimentacao_id, OrigemExecucao.AUTOMATICO)
+    logger.info(
+        "job_validacao_processado job_id=%s movimentacao_id=%s resultado=%s",
+        job.id,
+        job.movimentacao_id,
+        resultado.resultado.value,
+    )
     return True
 
 
@@ -92,6 +60,15 @@ def drenar_fila(session: Session) -> int:
 def main() -> None:  # pragma: no cover — laço de processo real, exercitado manualmente
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     logger.info("worker_iniciado intervalo_polling_s=%s", INTERVALO_POLLING_SEGUNDOS)
+
+    session_recuperacao = SessionLocal()
+    try:
+        recuperados = orchestrator.recuperar_jobs_stale(session_recuperacao)
+        if recuperados:
+            logger.info("jobs_recuperados_no_startup total=%s", recuperados)
+    finally:
+        session_recuperacao.close()
+
     try:
         while True:
             session = SessionLocal()

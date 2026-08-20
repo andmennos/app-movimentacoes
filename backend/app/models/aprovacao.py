@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -9,6 +9,7 @@ from app.models.enums import EstadoAprovacao, TipoAprovacao
 
 class Aprovacao(Base):
     __tablename__ = "aprovacao"
+    __table_args__ = (UniqueConstraint("movimentacao_id", "tipo", name="uq_aprovacao_movimentacao_tipo"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     movimentacao_id: Mapped[int] = mapped_column(

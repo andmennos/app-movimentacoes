@@ -1,0 +1,97 @@
+<div class="pagina">
+  <header class="cabecalho">
+    <h1>Aprovações pendentes</h1>
+  </header>
+
+  <div class="filtros">
+    <input
+      type="text"
+      class="campo-busca"
+      placeholder="Buscar por ID da movimentação, matrícula ou nome do colaborador"
+      [ngModel]="busca"
+      (ngModelChange)="onBuscaMudou($event)"
+      aria-label="Buscar por ID, matrícula ou nome"
+    />
+  </div>
+
+  @if (carregando()) {
+    <div class="estado estado-carregando" role="status">Carregando aprovações…</div>
+  } @else if (erro()) {
+    <div class="estado estado-erro" role="alert">
+      {{ erro() }}
+      <button type="button" (click)="carregar()">Tentar novamente</button>
+    </div>
+  } @else if (pendentes().length === 0) {
+    <div class="estado estado-vazio">Nenhuma aprovação pendente para você no momento.</div>
+  } @else {
+    <div class="tabela-container">
+      <table class="tabela">
+        <thead>
+          <tr>
+            @for (campo of campos; track campo.valor) {
+              <th (click)="ordenarPorCampo(campo.valor)" class="ordenavel">
+                {{ campo.rotulo }}
+                @if (ordenarPor === campo.valor) {
+                  <span class="seta">{{ direcao === 'asc' ? '▲' : '▼' }}</span>
+                }
+              </th>
+            }
+            <th>Origem</th>
+            <th>Destino</th>
+            <th>Justificativa</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of pendentes(); track chave(item)) {
+            <tr>
+              <td><a [routerLink]="['/movimentacoes', item.movimentacaoId]">{{ item.movimentacaoId }}</a></td>
+              <td>{{ item.dataSolicitacao | date: 'dd/MM/yyyy HH:mm' }}</td>
+              <td>
+                <span class="badge badge-PENDENTE">{{ item.tipo }}</span>
+                <span class="tipo-movimentacao">{{ item.tipoMovimentacao }}</span>
+              </td>
+              <td>{{ item.solicitante ? item.solicitante.username : '—' }}</td>
+              <td>{{ item.colaborador.nome }} ({{ item.colaborador.matricula }})</td>
+              <td>{{ item.setor ?? '—' }}</td>
+              <td>{{ item.origem ?? '—' }}</td>
+              <td>{{ item.destino ?? '—' }}</td>
+              <td class="celula-justificativa">
+                <label [for]="'justificativa-' + chave(item)" class="rotulo-oculto">Justificativa (opcional)</label>
+                <textarea
+                  [id]="'justificativa-' + chave(item)"
+                  rows="1"
+                  placeholder="Opcional"
+                  [(ngModel)]="justificativas[chave(item)]"
+                  [ngModelOptions]="{ standalone: true }"
+                  [disabled]="decidindo() === chave(item)"
+                ></textarea>
+                @if (erroDecisao()[chave(item)]) {
+                  <p class="erro-decisao" role="alert">{{ erroDecisao()[chave(item)] }}</p>
+                }
+              </td>
+              <td class="celula-acoes">
+                <button
+                  type="button"
+                  class="primario"
+                  (click)="decidir(item, 'APROVADA')"
+                  [disabled]="decidindo() === chave(item)"
+                >
+                  Aprovar
+                </button>
+                <button
+                  type="button"
+                  class="perigo"
+                  (click)="decidir(item, 'REPROVADA')"
+                  [disabled]="decidindo() === chave(item)"
+                >
+                  Reprovar
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>

@@ -11,7 +11,6 @@ from app.validation.promocao import REGRAS_PROMOCAO
 from app.validation.transferencia import REGRAS_TRANSFERENCIA
 from app.validation.troca_gestor import REGRAS_TROCA_GESTOR
 from app.validation.types import (
-    EstadoAprovacao,
     Inconsistencia,
     ResultadoValidacao,
     TipoMovimentacao,
@@ -50,23 +49,14 @@ def executar(ctx: ValidationContext) -> list[Inconsistencia]:
     return inconsistencias
 
 
-def resolver_resultado(
-    inconsistencias: list[Inconsistencia], aprovacoes: list
-) -> ResultadoValidacao:
-    """spec.md §5.4 / plan.md §5.4:
+def resolver_resultado(inconsistencias: list[Inconsistencia]) -> ResultadoValidacao:
+    """spec.md §7.5: a engine só é chamada depois que o gate (`processing/`)
+    já confirmou que todas as aprovações exigidas estão `APROVADA` — este
+    módulo não volta a examinar aprovações.
 
-    inconsistências não vazias        -> REPROVADA
-    alguma aprovação REPROVADA        -> REPROVADA
-    alguma aprovação PENDENTE         -> AGUARDANDO_APROVACAO
-    todas APROVADA                    -> APROVADA
-
-    Aprovação exigida ausente ou não íntegra já gerou inconsistência na etapa
-    anterior (via Txx/Pxx/TGxx/CCxx/AExx), portanto cai no primeiro ramo.
+    inconsistências não vazias -> REPROVADA
+    inconsistências vazias     -> APROVADA
     """
     if inconsistencias:
         return ResultadoValidacao.REPROVADA
-    if any(a.estado == EstadoAprovacao.REPROVADA for a in aprovacoes):
-        return ResultadoValidacao.REPROVADA
-    if any(a.estado == EstadoAprovacao.PENDENTE for a in aprovacoes):
-        return ResultadoValidacao.AGUARDANDO_APROVACAO
     return ResultadoValidacao.APROVADA

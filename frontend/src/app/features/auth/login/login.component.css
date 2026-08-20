@@ -1,0 +1,52 @@
+.pagina-login {
+  min-height: calc(100vh - 4rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.cartao-login {
+  width: 100%;
+  max-width: 360px;
+  background: var(--cor-superficie);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.cartao-login h1 {
+  font-size: 1.2rem;
+  margin-bottom: 0.25rem;
+}
+
+.subtitulo {
+  color: var(--cor-texto-suave);
+  margin: 0 0 1rem 0;
+  font-size: 0.85rem;
+}
+
+.cartao-login label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+
+.cartao-login input {
+  width: 100%;
+  margin-bottom: 0.25rem;
+}
+
+.cartao-login button {
+  margin-top: 1rem;
+}
+
+.erro-login {
+  color: var(--cor-reprovada-fg);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0 0;
+}

@@ -1,5 +1,4 @@
 .pagina {
-  max-width: 1100px;
   margin: 0 auto;
   padding: 1.5rem;
 }
@@ -36,7 +35,7 @@
 
 .tabela th,
 .tabela td {
-  text-align: left;
+  text-align: center;
   padding: 0.7rem 1rem;
   border-bottom: 1px solid var(--cor-borda);
   white-space: nowrap;
@@ -67,6 +66,14 @@
 
 .linha-clicavel {
   cursor: pointer;
+}
+
+.tabela td.celula-motivo {
+  max-width: 320px;
+  min-width: 220px;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.4;
 }
 
 .linha-clicavel:hover {

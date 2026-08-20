@@ -5,13 +5,34 @@ export type TipoMovimentacao =
   | 'MUDANCA_CENTRO_CUSTO'
   | 'ALTERACAO_ESTRUTURA';
 
-export type StatusMovimentacao = 'PENDENTE' | 'APROVADA' | 'REPROVADA';
+export type StatusMovimentacao =
+  | 'AGUARDANDO_APROVACAO'
+  | 'PENDENTE'
+  | 'APROVADA'
+  | 'REPROVADA'
+  | 'BLOQUEADA';
 
-export type ResultadoValidacao = 'APROVADA' | 'REPROVADA' | 'AGUARDANDO_APROVACAO';
+export type ResultadoValidacao = 'APROVADA' | 'REPROVADA';
 
 export type EstadoAprovacao = 'PENDENTE' | 'APROVADA' | 'REPROVADA';
 
-export type TipoAprovacao = 'GESTOR_ORIGEM' | 'GESTOR_DESTINO' | 'RH' | 'GERENCIA' | 'DIRETORIA';
+export type TipoAprovacao =
+  | 'GESTOR_ORIGEM'
+  | 'GESTOR_DESTINO'
+  | 'GESTOR_SUPERIOR'
+  | 'RH'
+  | 'GESTOR_RH'
+  | 'GERENCIA'
+  | 'DIRETORIA'
+  | 'GESTOR_RH_ADICIONAL';
+
+export type PerfilUsuario = 'ADMIN' | 'RH_ANALISTA' | 'RH_GESTOR' | 'LIDERANCA';
+
+export interface SolicitanteResumo {
+  id: number;
+  username: string;
+  perfil: PerfilUsuario;
+}
 
 export interface ColaboradorResumo {
   id: number;
@@ -76,6 +97,28 @@ export interface UltimaValidacaoResponse {
   inconsistencias: InconsistenciaResponse[];
 }
 
+export interface ImpedimentoResponse {
+  origem: string;
+  codigo: string;
+  mensagem: string;
+}
+
+export interface ProcessamentoResponse {
+  estado: string | null;
+  podeValidarManualmente: boolean;
+  motivoValidacaoManual: string | null;
+}
+
+export interface EventoHistoricoResponse {
+  tipoEvento: string;
+  dataHora: string;
+  origem: string;
+  mensagem: string;
+  detalheSanitizado: string | null;
+  ator: string | null;
+  solicitante: string | null;
+}
+
 export interface MovimentacaoItem {
   id: number;
   tipo: TipoMovimentacao;
@@ -83,6 +126,8 @@ export interface MovimentacaoItem {
   colaborador: ColaboradorResumo;
   dataSolicitacao: string;
   resultadoUltimaValidacao: ResultadoValidacao | null;
+  solicitante: SolicitanteResumo | null;
+  motivoResumo: string;
 }
 
 export interface MovimentacaoListaResponse {
@@ -115,8 +160,14 @@ export interface MovimentacaoDetalheResponse {
   gestorOrigem: GestorResumo | null;
   gestorDestino: GestorResumo | null;
 
+  solicitante: SolicitanteResumo | null;
+  motivoResumo: string;
+
   aprovacoes: AprovacaoResponse[];
   ultimaValidacao: UltimaValidacaoResponse | null;
+  impedimentos: ImpedimentoResponse[];
+  processamento: ProcessamentoResponse;
+  historicoProcessamento: EventoHistoricoResponse[];
 }
 
 /**
@@ -136,4 +187,5 @@ export interface ErroResposta {
     codigo: string;
     mensagem: string;
   };
+  impedimentos?: ImpedimentoResponse[];
 }

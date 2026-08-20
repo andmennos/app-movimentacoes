@@ -17,7 +17,9 @@ function item(id: number): MovimentacaoItem {
     status: 'PENDENTE',
     colaborador: { id: 1, matricula: 'M000001', nome: 'Fulano' },
     dataSolicitacao: '2026-01-01T10:00:00',
-    resultadoUltimaValidacao: null
+    resultadoUltimaValidacao: null,
+    solicitante: { id: 9, username: 'admin', perfil: 'ADMIN' },
+    motivoResumo: 'Processamento pendente.'
   };
 }
 
@@ -109,6 +111,50 @@ describe('ListagemComponent', () => {
     service.listar.calls.reset();
     component.ordenarPorCampo('tipo');
     expect(component.direcao).toBe('desc');
+  });
+
+  it('T-84 — ID é a primeira coluna e aparece na primeira célula de cada linha', () => {
+    service.listar.and.returnValue(
+      of({ items: [item(42)], page: 1, pageSize: 20, total: 1, totalPages: 1 })
+    );
+    fixture.detectChanges();
+
+    const cabecalhos: HTMLElement[] = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.tabela thead th')
+    );
+    expect(cabecalhos[0].textContent?.trim()).toBe('ID');
+
+    const primeiraLinha = (fixture.nativeElement as HTMLElement).querySelector('.tabela tbody tr');
+    const primeiraCelula = primeiraLinha?.querySelector('td');
+    expect(primeiraCelula?.textContent?.trim()).toBe('42');
+  });
+
+  it('T-84 — busca envia o termo digitado independente de ser ID, matrícula ou nome', fakeAsync(() => {
+    fixture.detectChanges();
+    service.listar.calls.reset();
+
+    component.onBuscaMudou('42');
+    tick(400);
+
+    expect(service.listar).toHaveBeenCalledWith(jasmine.objectContaining({ busca: '42', page: 1 }));
+  }));
+
+  it('T-84 — apenas a célula de motivo permite quebra de linha; as demais continuam centralizadas/sem quebra', () => {
+    service.listar.and.returnValue(
+      of({ items: [item(1)], page: 1, pageSize: 20, total: 1, totalPages: 1 })
+    );
+    fixture.detectChanges();
+
+    const celulaMotivo = (fixture.nativeElement as HTMLElement).querySelector('.celula-motivo') as HTMLElement;
+    const estiloMotivo = getComputedStyle(celulaMotivo);
+    expect(estiloMotivo.whiteSpace).toBe('normal');
+
+    const outraCelula = (fixture.nativeElement as HTMLElement).querySelector(
+      '.tabela tbody tr td:not(.celula-motivo)'
+    ) as HTMLElement;
+    const estiloOutra = getComputedStyle(outraCelula);
+    expect(estiloOutra.whiteSpace).toBe('nowrap');
+    expect(estiloOutra.textAlign).toBe('center');
   });
 
   it('paginação navega para a página seguinte dentro dos limites', () => {

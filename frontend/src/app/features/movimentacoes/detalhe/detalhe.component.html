@@ -29,6 +29,9 @@
           }
         </dd>
 
+        <dt>Solicitante</dt>
+        <dd>{{ mov.solicitante ? mov.solicitante.username + ' (' + mov.solicitante.perfil + ')' : '—' }}</dd>
+
         <dt>Data da solicitação</dt>
         <dd>{{ mov.dataSolicitacao | date: 'dd/MM/yyyy HH:mm' }}</dd>
 
@@ -48,12 +51,6 @@
           </dd>
         }
 
-        @if (mov.centroCustoOrigem || mov.centroCustoDestino) {
-          <dt>Centro de custo origem → destino</dt>
-          <dd>
-            {{ mov.centroCustoOrigem?.nome ?? '—' }} → {{ mov.centroCustoDestino?.nome ?? '—' }}
-          </dd>
-        }
 
         @if (mov.estruturaOrigem || mov.estruturaDestino) {
           <dt>Estrutura origem → destino</dt>
@@ -99,56 +96,76 @@
       }
     </section>
 
-    @if (mov.status === 'APROVADA') {
+    @if (mov.impedimentos.length > 0) {
       <section class="cartao">
-        <h2>Histórico da solicitação</h2>
-        <p class="texto-suave nota-automatica">
-          A validação é executada automaticamente pelo backend assim que as aprovações exigidas são concluídas. Esta solicitação já foi aprovada — a linha do tempo abaixo mostra todo o processamento, não só o resultado da validação.
+        <h2>Impedimentos</h2>
+        <ul class="lista-impedimentos">
+          @for (impedimento of mov.impedimentos; track impedimento.codigo + impedimento.mensagem) {
+            <li class="item-impedimento">
+              <span class="codigo">{{ impedimento.codigo }}</span>
+              <span class="mensagem">{{ impedimento.mensagem }}</span>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    @if (mov.ultimaValidacao; as ultima) {
+      <section class="cartao">
+        <h2>Última validação</h2>
+        <p class="resumo-ultima-validacao">
+          Resultado:
+          <span class="badge" [class]="'badge-' + ultima.resultado">{{ resultadoLabel[ultima.resultado] }}</span>
+          em {{ ultima.validadoEm | date: 'dd/MM/yyyy HH:mm' }}
         </p>
+        <app-inconsistencias [inconsistencias]="ultima.inconsistencias" />
+      </section>
+    }
+
+    @if (mov.processamento.podeValidarManualmente) {
+      <section class="cartao">
+        <h2>Validação manual</h2>
+        <div class="acao-validar-manual">
+          <button type="button" class="primario" (click)="validarAgora()" [disabled]="validando()">
+            {{ validando() ? 'Validando…' : 'Validar agora' }}
+          </button>
+        </div>
+        @if (erroValidacaoManual()) {
+          <p class="erro-validacao-manual" role="alert">{{ erroValidacaoManual() }}</p>
+        }
+      </section>
+    }
+
+    <section class="cartao">
+      <h2>Histórico de processamento</h2>
+      @if (mov.historicoProcessamento.length === 0) {
+        <p class="texto-suave">Nenhum evento registrado ainda.</p>
+      } @else {
         <ol class="linha-do-tempo">
-          @for (evento of historico(mov); track evento.rotulo + evento.dataHora) {
-            <li [class.ilustrativo]="evento.ilustrativo">
+          @for (evento of mov.historicoProcessamento; track evento.tipoEvento + evento.dataHora) {
+            <li>
               <span class="linha-do-tempo-data">{{ evento.dataHora | date: 'dd/MM/yyyy HH:mm' }}</span>
-              <span class="linha-do-tempo-rotulo">
-                {{ evento.rotulo }}
-                @if (evento.ilustrativo) {
-                  <span class="marcador-ilustrativo">cenário ilustrativo — fora do escopo deste MVP</span>
+              <span class="linha-do-tempo-conteudo">
+                <span class="linha-do-tempo-tipo">{{ evento.tipoEvento }}</span>
+                <span class="linha-do-tempo-mensagem">{{ evento.mensagem }}</span>
+                @if (evento.ator || evento.solicitante) {
+                  <span class="linha-do-tempo-atores texto-suave">
+                    @if (evento.ator) {
+                      ator: {{ evento.ator }}
+                    }
+                    @if (evento.ator && evento.solicitante) {
+                      ·
+                    }
+                    @if (evento.solicitante) {
+                      solicitante: {{ evento.solicitante }}
+                    }
+                  </span>
                 }
               </span>
             </li>
           }
         </ol>
-      </section>
-    } @else {
-      <section class="cartao">
-        <h2>Última validação</h2>
-        <p class="texto-suave nota-automatica">
-          A validação é executada automaticamente pelo backend assim que as aprovações exigidas são concluídas — este portal relata o resultado e, se necessário, permite validar sob demanda.
-        </p>
-
-        @if (mov.ultimaValidacao; as ultima) {
-          <p class="resumo-ultima-validacao">
-            Resultado:
-            <span class="badge" [class]="'badge-' + ultima.resultado">{{ resultadoLabel[ultima.resultado] }}</span>
-            em {{ ultima.validadoEm | date: 'dd/MM/yyyy HH:mm' }}
-          </p>
-          <app-inconsistencias [inconsistencias]="ultima.inconsistencias" />
-        } @else {
-          <p class="texto-suave estado-aguardando">{{ mensagemSemValidacao(mov.status) }}</p>
-        }
-
-        @if (podeValidarManualmente(mov.status)) {
-          <div class="acao-validar-manual">
-            <button type="button" class="primario" (click)="validarAgora()" [disabled]="validando()">
-              {{ validando() ? 'Validando…' : 'Validar agora' }}
-            </button>
-            <span class="texto-suave nota-manual">Roda a validação na hora, mesmo que o Worker automático esteja parado.</span>
-          </div>
-          @if (erroValidacaoManual()) {
-            <p class="erro-validacao-manual" role="alert">{{ erroValidacaoManual() }}</p>
-          }
-        }
-      </section>
-    }
+      }
+    </section>
   }
 </div>

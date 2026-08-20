@@ -63,9 +63,25 @@ def tg05_sem_ciclo_hierarquico(ctx: ValidationContext) -> list[Inconsistencia]:
 
 
 def tg06_aprovacoes_integras(ctx: ValidationContext) -> list[Inconsistencia]:
+    """spec.md §10.4/T-65 — além da integridade padrão dos aprovadores,
+    confirma que `GESTOR_ORIGEM` corresponde ao gestor atual real do
+    colaborador (`colaborador.gestor_id`), não ao gestor proposto. Uma
+    inversão dos dois campos (origem/destino trocados) é um defeito de
+    integridade — TG06, nunca TG05 (que cobre exclusivamente ciclo
+    hierárquico, spec RC-04)."""
     inconsistencias: list[Inconsistencia] = []
     for tipo in (TipoAprovacao.GESTOR_ORIGEM, TipoAprovacao.GESTOR_DESTINO):
         inconsistencias.extend(emitir_se_nao_integra(ctx, tipo, "TG06"))
+
+    if (
+        ctx.colaborador is not None
+        and ctx.gestor_origem is not None
+        and ctx.gestor_origem.id != ctx.colaborador.gestor_id
+    ):
+        inconsistencias.append(
+            Inconsistencia("TG06", "GESTOR_ORIGEM não corresponde ao gestor atual real do colaborador")
+        )
+
     return inconsistencias
 
 

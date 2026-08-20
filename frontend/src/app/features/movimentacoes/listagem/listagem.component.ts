@@ -91,13 +91,6 @@ export class ListagemComponent implements OnInit {
     this.router.navigate(['/movimentacoes', item.id]);
   }
 
-  /** Distingue, sem sugerir ação manual, por que ainda não há resultado de
-   * validação (spec §5.4): bloqueada pelo gate de aprovação vs. aguardando
-   * conclusão das aprovações/processamento automático. */
-  textoSemValidacao(item: MovimentacaoItem): string {
-    return item.status === 'REPROVADA' ? 'bloqueada (aprovação reprovada)' : 'aguardando aprovação/processamento';
-  }
-
   carregar(): void {
     this.carregando.set(true);
     this.erro.set(null);

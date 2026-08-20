@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app.models import ResultadoValidacao
+from app.models import OrigemExecucao, ResultadoValidacao
 from app.repositories import auditoria_repository as repo
 from app.validation.types import Inconsistencia, Severidade
 from tests.builders import MovimentacaoBuilder
@@ -20,6 +20,7 @@ def test_criar_grava_um_registro_com_n_inconsistencias(db_session):
         inconsistencias=inconsistencias,
         versao_motor="1.0.0",
         data_hora=datetime(2026, 1, 1, 10, 0, 0),
+        origem_execucao=OrigemExecucao.AUTOMATICO,
     )
 
     assert auditoria.id is not None
@@ -32,10 +33,22 @@ def test_criar_grava_um_registro_com_n_inconsistencias(db_session):
 def test_buscar_ultima_retorna_a_mais_recente(db_session):
     mov = MovimentacaoBuilder().build(db_session)
     repo.criar(
-        db_session, mov.id, ResultadoValidacao.REPROVADA, [], "1.0.0", datetime(2026, 1, 1, 10, 0, 0)
+        db_session,
+        mov.id,
+        ResultadoValidacao.REPROVADA,
+        [],
+        "1.0.0",
+        datetime(2026, 1, 1, 10, 0, 0),
+        OrigemExecucao.AUTOMATICO,
     )
     mais_recente = repo.criar(
-        db_session, mov.id, ResultadoValidacao.APROVADA, [], "1.0.0", datetime(2026, 1, 2, 10, 0, 0)
+        db_session,
+        mov.id,
+        ResultadoValidacao.APROVADA,
+        [],
+        "1.0.0",
+        datetime(2026, 1, 2, 10, 0, 0),
+        OrigemExecucao.AUTOMATICO,
     )
 
     encontrada = repo.buscar_ultima(db_session, mov.id)
@@ -47,9 +60,23 @@ def test_buscar_ultima_retorna_a_mais_recente(db_session):
 def test_revalidar_nao_altera_registros_anteriores(db_session):
     mov = MovimentacaoBuilder().build(db_session)
     primeira = repo.criar(
-        db_session, mov.id, ResultadoValidacao.REPROVADA, [], "1.0.0", datetime(2026, 1, 1, 10, 0, 0)
+        db_session,
+        mov.id,
+        ResultadoValidacao.REPROVADA,
+        [],
+        "1.0.0",
+        datetime(2026, 1, 1, 10, 0, 0),
+        OrigemExecucao.AUTOMATICO,
     )
-    repo.criar(db_session, mov.id, ResultadoValidacao.APROVADA, [], "1.0.0", datetime(2026, 1, 2, 10, 0, 0))
+    repo.criar(
+        db_session,
+        mov.id,
+        ResultadoValidacao.APROVADA,
+        [],
+        "1.0.0",
+        datetime(2026, 1, 2, 10, 0, 0),
+        OrigemExecucao.AUTOMATICO,
+    )
 
     primeira_id = primeira.id
     db_session.expire_all()

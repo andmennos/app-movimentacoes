@@ -7,6 +7,7 @@ from .departamento_builder import DepartamentoBuilder
 from .estrutura_builder import EstruturaOrganizacionalBuilder
 from .job_validacao_builder import JobValidacaoBuilder
 from .movimentacao_builder import MovimentacaoBuilder
+from .usuario_builder import UsuarioBuilder
 
 __all__ = [
     "AprovacaoBuilder",
@@ -17,6 +18,7 @@ __all__ = [
     "EstruturaOrganizacionalBuilder",
     "JobValidacaoBuilder",
     "MovimentacaoBuilder",
+    "UsuarioBuilder",
     "criar_aprovacoes_exigidas",
     "tipos_exigidos",
 ]

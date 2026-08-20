@@ -3,7 +3,6 @@ funções puras (RNF-05); estes helpers só montam as estruturas de dados."""
 
 from __future__ import annotations
 
-from app.validation.aprovacoes import EXIGENCIAS_BASE_POR_TIPO
 from app.validation.types import (
     AprovacaoRef,
     CargoRef,
@@ -24,14 +23,43 @@ _NAO_INFORMADO = object()
 """Sentinela distinta de None: permite que um teste passe `colaborador=None`
 deliberadamente (G01 ausente) sem cair no valor padrão."""
 
+_EXIGENCIAS_BASE_POR_TIPO_SEM_SOLICITANTE = {
+    TipoMovimentacao.TRANSFERENCIA: [TipoAprovacao.GESTOR_ORIGEM, TipoAprovacao.GESTOR_DESTINO, TipoAprovacao.RH],
+    TipoMovimentacao.PROMOCAO: [TipoAprovacao.GESTOR_ORIGEM, TipoAprovacao.RH],
+    TipoMovimentacao.TROCA_GESTOR: [TipoAprovacao.GESTOR_ORIGEM, TipoAprovacao.GESTOR_DESTINO, TipoAprovacao.RH],
+    TipoMovimentacao.MUDANCA_CENTRO_CUSTO: [TipoAprovacao.GESTOR_DESTINO, TipoAprovacao.RH],
+    TipoMovimentacao.ALTERACAO_ESTRUTURA: [TipoAprovacao.GESTOR_ORIGEM, TipoAprovacao.RH],
+}
+"""Matriz-base *sem* solicitante (spec §5.3-§5.7) — usada só para montar
+contextos de teste "tudo aprovado" por padrão. Equivale a
+`app.validation.aprovacoes.exigencias_para(ctx)` quando
+`ctx.solicitante_colaborador_id is None` (nenhuma substituição se aplica),
+mas não pode chamar essa função aqui porque o `ValidationContext` ainda não
+existe neste ponto da montagem (`aprovacoes_completas` monta o campo
+`aprovacoes` que, por sua vez, compõe o `ValidationContext`)."""
+
 
 def novo_id() -> int:
     return next(_id_counter)
 
 
 def cargo_ref(**overrides) -> CargoRef:
-    dados = dict(id=novo_id(), nivel=1, ativo=True, permite_gestao=False, aprovacao_adicional=None)
+    dados = dict(
+        id=novo_id(),
+        nivel=1,
+        ativo=True,
+        permite_gestao=False,
+        aprovacao_adicional=None,
+        familia_cargo="GERAL",
+        custo_mensal_referencia=0,
+    )
     dados.update(overrides)
+    if "ordem_progressao" not in overrides:
+        # Espelha `nivel` por padrão (P03/plan §11.2) — a maioria dos testes
+        # já usa pares `nivel=N`/`nivel=N+1` para representar "próximo
+        # passo da trilha"; passar `ordem_progressao` explicitamente
+        # continua sendo o jeito certo de testar saltos/família diferente.
+        dados["ordem_progressao"] = dados["nivel"]
     return CargoRef(**dados)
 
 
@@ -66,7 +94,7 @@ def aprovacao_ref(tipo: TipoAprovacao, **overrides) -> AprovacaoRef:
 
 
 def aprovacoes_completas(tipo_movimentacao: TipoMovimentacao, extra: TipoAprovacao | None = None):
-    tipos = list(EXIGENCIAS_BASE_POR_TIPO[tipo_movimentacao])
+    tipos = list(_EXIGENCIAS_BASE_POR_TIPO_SEM_SOLICITANTE[tipo_movimentacao])
     if extra is not None:
         tipos.append(extra)
     return [aprovacao_ref(t) for t in tipos]
@@ -135,18 +163,35 @@ def contexto_promocao(cargo_atual=_NAO_INFORMADO, cargo_destino=_NAO_INFORMADO, 
         cargo_destino=cargo_destino,
     )
     if "aprovacoes" not in overrides:
-        base["aprovacoes"] = aprovacoes_completas(TipoMovimentacao.PROMOCAO, extra=extra_tipo)
+        # T-75 — bundle completo por padrão quando há aprovacao_adicional:
+        # a etapa GERENCIA/DIRETORIA *e* GESTOR_RH_ADICIONAL (spec RC-36).
+        extras = [extra_tipo, TipoAprovacao.GESTOR_RH_ADICIONAL] if extra_tipo is not None else []
+        base["aprovacoes"] = aprovacoes_completas(TipoMovimentacao.PROMOCAO) + [aprovacao_ref(t) for t in extras]
+    if extra_tipo is not None and "responsaveis_derivados" not in overrides:
+        # T-75 — GERENCIA/DIRETORIA agora exige pessoa concreta resolvida
+        # (papel_lideranca); um contexto "tudo íntegro" por padrão precisa
+        # de um responsável para esse papel, como já ocorre para
+        # GESTOR_ORIGEM/GESTOR_DESTINO.
+        responsaveis = responsaveis_padrao()
+        responsaveis[extra_tipo.value] = colaborador_ref()
+        base["responsaveis_derivados"] = responsaveis
     base.update(overrides)
     return contexto_base(TipoMovimentacao.PROMOCAO, **base)
 
 
 def contexto_troca_gestor(
     colaborador=_NAO_INFORMADO,
+    gestor_origem=_NAO_INFORMADO,
     gestor_destino=_NAO_INFORMADO,
     cadeia: dict[int, NoHierarquia] | None = None,
     **overrides,
 ) -> ValidationContext:
-    colaborador = colaborador_ref() if colaborador is _NAO_INFORMADO else colaborador
+    # T-65: GESTOR_ORIGEM precisa bater com colaborador.gestor_id por
+    # padrão (senão TG06 dispara em todo contexto "válido") — monta
+    # gestor_origem primeiro e amarra o colaborador a ele.
+    gestor_origem = colaborador_ref() if gestor_origem is _NAO_INFORMADO else gestor_origem
+    if colaborador is _NAO_INFORMADO:
+        colaborador = colaborador_ref(gestor_id=gestor_origem.id if gestor_origem is not None else None)
     if gestor_destino is _NAO_INFORMADO:
         gestor_destino = colaborador_ref(cargo=cargo_ref(permite_gestao=True))
 
@@ -157,7 +202,7 @@ def contexto_troca_gestor(
 
     base = dict(
         colaborador=colaborador,
-        gestor_origem=colaborador_ref(),
+        gestor_origem=gestor_origem,
         gestor_destino=gestor_destino,
         cadeia_hierarquica=cadeia,
     )

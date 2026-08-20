@@ -13,6 +13,9 @@ class CargoBuilder:
             ativo=True,
             permite_gestao=False,
             aprovacao_adicional=None,
+            familia_cargo="GERAL",
+            ordem_progressao=n,
+            custo_mensal_referencia=0,
         )
         self.dados.update(overrides)
 

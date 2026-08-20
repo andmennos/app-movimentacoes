@@ -23,8 +23,13 @@ function movimentacaoBase(overrides: Partial<MovimentacaoDetalheResponse> = {}):
     estruturaDestino: null,
     gestorOrigem: null,
     gestorDestino: null,
+    solicitante: { id: 9, username: 'admin', perfil: 'ADMIN' },
+    motivoResumo: 'Processamento pendente.',
     aprovacoes: [],
     ultimaValidacao: null,
+    impedimentos: [],
+    processamento: { estado: null, podeValidarManualmente: false, motivoValidacaoManual: null },
+    historicoProcessamento: [],
     ...overrides
   };
 }
@@ -70,19 +75,60 @@ describe('DetalheComponent', () => {
     expect(component.erro()).toContain('não encontrada');
   });
 
-  it('CA-020: quando PENDENTE sem última validação, comunica aguardando aprovação/processamento sem sugerir ação', () => {
-    service.buscarPorId.and.returnValue(of(movimentacaoBase({ status: 'PENDENTE', ultimaValidacao: null })));
-    montar();
-    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(texto.toLowerCase()).toContain('aguardando aprovação');
-    expect(texto.toLowerCase()).not.toContain('validar movimentação');
+  it('exibe os cinco status com seus rótulos', () => {
+    const casos: MovimentacaoDetalheResponse['status'][] = [
+      'AGUARDANDO_APROVACAO',
+      'PENDENTE',
+      'APROVADA',
+      'REPROVADA',
+      'BLOQUEADA'
+    ];
+    for (const status of casos) {
+      service.buscarPorId.and.returnValue(of(movimentacaoBase({ status })));
+      montar();
+      const badge = fixture.nativeElement.querySelector('.badge-' + status);
+      expect(badge).not.toBeNull();
+    }
   });
 
-  it('CA-020: quando REPROVADA sem última validação, comunica bloqueio pelo gate de aprovação', () => {
-    service.buscarPorId.and.returnValue(of(movimentacaoBase({ status: 'REPROVADA', ultimaValidacao: null })));
+  it('BLOQUEADA: exibe os impedimentos e não exibe "Nenhuma inconsistência encontrada"', () => {
+    service.buscarPorId.and.returnValue(
+      of(
+        movimentacaoBase({
+          status: 'BLOQUEADA',
+          ultimaValidacao: null,
+          impedimentos: [
+            {
+              origem: 'APROVACAO',
+              codigo: 'APROVACAO_REPROVADA',
+              mensagem: 'Aprovação GESTOR_ORIGEM reprovada por Felipe Almeida.'
+            }
+          ]
+        })
+      )
+    );
     montar();
     const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(texto.toLowerCase()).toContain('bloqueada');
+    expect(texto).toContain('Aprovação GESTOR_ORIGEM reprovada por Felipe Almeida.');
+    expect(texto).not.toContain('Nenhuma inconsistência encontrada');
+  });
+
+  it('AGUARDANDO_APROVACAO: exibe os impedimentos e não exibe "Nenhuma inconsistência encontrada"', () => {
+    service.buscarPorId.and.returnValue(
+      of(
+        movimentacaoBase({
+          status: 'AGUARDANDO_APROVACAO',
+          ultimaValidacao: null,
+          impedimentos: [
+            { origem: 'APROVACAO', codigo: 'APROVACAO_PENDENTE', mensagem: 'Aguardando aprovação GESTOR_DESTINO.' }
+          ]
+        })
+      )
+    );
+    montar();
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('Aguardando aprovação GESTOR_DESTINO.');
+    expect(texto).not.toContain('Nenhuma inconsistência encontrada');
   });
 
   it('exibe a última validação e as inconsistências quando presentes', () => {
@@ -106,37 +152,54 @@ describe('DetalheComponent', () => {
     expect(texto).toContain('Departamento de origem e destino são iguais');
   });
 
-  it('ADR-0010: exibe o botão "Validar agora" quando PENDENTE', () => {
-    service.buscarPorId.and.returnValue(of(movimentacaoBase({ status: 'PENDENTE', ultimaValidacao: null })));
+  it('exibe o botão "Validar agora" somente quando processamento.podeValidarManualmente é true', () => {
+    service.buscarPorId.and.returnValue(
+      of(movimentacaoBase({ status: 'PENDENTE', processamento: { estado: 'PENDENTE', podeValidarManualmente: true, motivoValidacaoManual: null } }))
+    );
     montar();
     const botao = fixture.nativeElement.querySelector('button.primario') as HTMLButtonElement | null;
     expect(botao).not.toBeNull();
     expect(botao?.textContent).toContain('Validar agora');
   });
 
-  it('ADR-0010: exibe o botão "Validar agora" quando REPROVADA (bloqueada)', () => {
-    service.buscarPorId.and.returnValue(of(movimentacaoBase({ status: 'REPROVADA', ultimaValidacao: null })));
-    montar();
-    expect(fixture.nativeElement.querySelector('button.primario')).not.toBeNull();
+  it('não exibe o botão "Validar agora" quando podeValidarManualmente é false, mesmo em BLOQUEADA/REPROVADA/APROVADA/AGUARDANDO_APROVACAO', () => {
+    const casos: MovimentacaoDetalheResponse['status'][] = [
+      'BLOQUEADA',
+      'REPROVADA',
+      'APROVADA',
+      'AGUARDANDO_APROVACAO'
+    ];
+    for (const status of casos) {
+      service.buscarPorId.and.returnValue(
+        of(
+          movimentacaoBase({
+            status,
+            processamento: { estado: null, podeValidarManualmente: false, motivoValidacaoManual: null }
+          })
+        )
+      );
+      montar();
+      expect(fixture.nativeElement.querySelector('button.primario')).toBeNull();
+    }
   });
 
-  it('ADR-0010: não exibe o botão "Validar agora" quando APROVADA', () => {
+  it('não exibe nenhum texto auxiliar removido junto ao botão', () => {
     service.buscarPorId.and.returnValue(
-      of(
-        movimentacaoBase({
-          status: 'APROVADA',
-          ultimaValidacao: { resultado: 'APROVADA', validadoEm: '2026-01-02T10:00:00', inconsistencias: [] }
-        })
-      )
+      of(movimentacaoBase({ processamento: { estado: 'PENDENTE', podeValidarManualmente: true, motivoValidacaoManual: null } }))
     );
     montar();
-    expect(fixture.nativeElement.querySelector('button.primario')).toBeNull();
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).not.toContain('Roda a validação na hora');
+    expect(texto).not.toContain('A validação é executada automaticamente pelo backend');
+    expect(texto).not.toContain('cenário ilustrativo');
   });
 
-  it('ADR-0010: ao clicar em "Validar agora" com sucesso, chama validar() e recarrega o detalhe', () => {
-    service.buscarPorId.and.returnValue(of(movimentacaoBase({ status: 'PENDENTE', ultimaValidacao: null })));
+  it('ao clicar em "Validar agora" com sucesso, chama validar() e recarrega o detalhe', () => {
+    service.buscarPorId.and.returnValue(
+      of(movimentacaoBase({ processamento: { estado: 'PENDENTE', podeValidarManualmente: true, motivoValidacaoManual: null } }))
+    );
     service.validar.and.returnValue(
-      of({ movimentacaoId: 5, status: 'AGUARDANDO_APROVACAO', validadoEm: '2026-01-03T10:00:00', inconsistencias: [] })
+      of({ movimentacaoId: 5, status: 'APROVADA', validadoEm: '2026-01-03T10:00:00', inconsistencias: [] })
     );
     montar();
 
@@ -148,46 +211,71 @@ describe('DetalheComponent', () => {
     expect(component.erroValidacaoManual()).toBeNull();
   });
 
-  it('ADR-0010: quando validar() falha, mostra a mensagem de erro e não recarrega', () => {
-    service.buscarPorId.and.returnValue(of(movimentacaoBase({ status: 'PENDENTE', ultimaValidacao: null })));
-    service.validar.and.returnValue(throwError(() => ({ error: { erro: { mensagem: 'Worker travado' } } })));
+  it('em 409 (conflito de negócio), recarrega o detalhe sem mostrar erro técnico', () => {
+    service.buscarPorId.and.returnValue(
+      of(movimentacaoBase({ processamento: { estado: 'PENDENTE', podeValidarManualmente: true, motivoValidacaoManual: null } }))
+    );
+    service.validar.and.returnValue(
+      throwError(() => ({
+        status: 409,
+        error: { erro: { codigo: 'VALIDACAO_MANUAL_NAO_PERMITIDA', mensagem: 'não permitida' } }
+      }))
+    );
     montar();
 
     component.validarAgora();
 
-    expect(component.erroValidacaoManual()).toBe('Worker travado');
+    expect(component.erroValidacaoManual()).toBeNull();
+    expect(service.buscarPorId).toHaveBeenCalledTimes(2);
+  });
+
+  it('em erro 5xx/rede, mostra mensagem de erro transitória e não recarrega', () => {
+    service.buscarPorId.and.returnValue(
+      of(movimentacaoBase({ processamento: { estado: 'PENDENTE', podeValidarManualmente: true, motivoValidacaoManual: null } }))
+    );
+    service.validar.and.returnValue(throwError(() => ({ status: 500, error: { erro: { mensagem: 'Erro interno' } } })));
+    montar();
+
+    component.validarAgora();
+
+    expect(component.erroValidacaoManual()).toBe('Erro interno');
     expect(component.validando()).toBeFalse();
     expect(service.buscarPorId).toHaveBeenCalledTimes(1);
   });
 
-  it('ADR-0010: solicitação APROVADA mostra o histórico em vez da última validação, com a entrada ilustrativa marcada', () => {
+  it('renderiza o histórico de processamento real vindo do backend', () => {
     service.buscarPorId.and.returnValue(
       of(
         movimentacaoBase({
           status: 'APROVADA',
-          dataSolicitacao: '2026-01-01T09:00:00',
-          aprovacoes: [
+          ultimaValidacao: { resultado: 'APROVADA', validadoEm: '2026-01-02T10:00:00', inconsistencias: [] },
+          historicoProcessamento: [
             {
-              tipo: 'GESTOR_ORIGEM',
-              estado: 'APROVADA',
-              aprovador: { id: 2, matricula: 'M000002', nome: 'Ciclana' },
-              dataDecisao: '2026-01-01T11:00:00'
+              tipoEvento: 'SOLICITACAO_RECEBIDA',
+              dataHora: '2026-01-01T09:00:00',
+              origem: 'SISTEMA',
+              mensagem: 'Solicitação de transferencia recebida.',
+              detalheSanitizado: null,
+              ator: null,
+              solicitante: null
+            },
+            {
+              tipoEvento: 'MOVIMENTACAO_EFETIVADA',
+              dataHora: '2026-01-02T10:00:00',
+              origem: 'AUTOMATICO',
+              mensagem: 'Movimentação efetivada no cadastro do colaborador.',
+              detalheSanitizado: null,
+              ator: null,
+              solicitante: null
             }
-          ],
-          ultimaValidacao: { resultado: 'APROVADA', validadoEm: '2026-01-01T12:00:00', inconsistencias: [] }
+          ]
         })
       )
     );
     montar();
 
     const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(texto).toContain('Histórico da solicitação');
-    expect(texto).toContain('Aprovação GESTOR_ORIGEM concluída por Ciclana');
-    expect(texto).toContain('Validação executada automaticamente');
-    expect(texto).toContain('cenário ilustrativo');
-    expect(fixture.nativeElement.querySelector('button.primario')).toBeNull();
-
-    const itens = component.historico(component.movimentacao()!);
-    expect(itens[itens.length - 1].ilustrativo).toBeTrue();
+    expect(texto).toContain('Solicitação de transferencia recebida.');
+    expect(texto).toContain('Movimentação efetivada no cadastro do colaborador.');
   });
 });

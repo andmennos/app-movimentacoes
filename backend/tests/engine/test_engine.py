@@ -67,14 +67,23 @@ def test_cnm04_cenario_catastrofico_nao_lanca_excecao():
 
 
 def test_todos_os_tipos_tem_regras_registradas():
+    tamanho_esperado = {
+        TipoMovimentacao.TRANSFERENCIA: 10,
+        TipoMovimentacao.PROMOCAO: 13,  # 4 gerais + 9 específicas (spec revisão 2026-08-19)
+        TipoMovimentacao.TROCA_GESTOR: 10,
+        TipoMovimentacao.MUDANCA_CENTRO_CUSTO: 10,
+        TipoMovimentacao.ALTERACAO_ESTRUTURA: 10,
+    }
     for tipo in TipoMovimentacao:
         assert tipo in REGRAS_POR_TIPO
-        assert len(REGRAS_POR_TIPO[tipo]) == 10  # 4 gerais + 6 específicas
+        assert len(REGRAS_POR_TIPO[tipo]) == tamanho_esperado[tipo]
 
 
-def test_v01_total_de_codigos_no_catalogo_e_34():
+def test_v01_total_de_codigos_no_catalogo_e_37():
+    """spec.md §10.7 revisão 2026-08-19 — 4 gerais + 6 transferência + 9
+    promoção + 6 troca de gestor + 6 centro de custo + 6 estrutura = 37."""
     codigos = set()
     for regras in REGRAS_POR_TIPO.values():
         for regra in regras:
             codigos.add(regra.__name__.split("_")[0].upper())
-    assert len(codigos) == 34
+    assert len(codigos) == 37

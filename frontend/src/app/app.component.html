@@ -1,6 +1,23 @@
 <header class="topo-app">
   <div class="topo-conteudo">
     <span class="marca">Portal de Mobilidade Organizacional</span>
+
+    @if (auth.autenticado()) {
+      <nav class="menu">
+        <a routerLink="/" routerLinkActive="ativo" [routerLinkActiveOptions]="{ exact: true }">Movimentações</a>
+        @if (auth.podeCriarSolicitacao()) {
+          <a routerLink="/movimentacoes/nova" routerLinkActive="ativo">Nova solicitação</a>
+        }
+        @if (auth.podeAprovar()) {
+          <a routerLink="/aprovacoes" routerLinkActive="ativo">Aprovações</a>
+        }
+      </nav>
+
+      <div class="sessao">
+        <span class="usuario-logado">{{ auth.usuario()?.username }} · {{ auth.usuario()?.perfil }}</span>
+        <button type="button" (click)="sair()">Sair</button>
+      </div>
+    }
   </div>
 </header>
 

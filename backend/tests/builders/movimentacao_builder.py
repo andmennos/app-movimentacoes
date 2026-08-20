@@ -20,7 +20,7 @@ class MovimentacaoBuilder:
         proximo()
         self.dados = dict(
             tipo=TipoMovimentacao.TRANSFERENCIA,
-            status=StatusMovimentacao.PENDENTE,
+            status=StatusMovimentacao.AGUARDANDO_APROVACAO,
             colaborador_id=None,
             data_solicitacao=datetime(2026, 1, 1, 12, 0, 0),
             departamento_origem_id=None,

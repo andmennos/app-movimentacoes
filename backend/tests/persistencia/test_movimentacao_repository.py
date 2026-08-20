@@ -92,3 +92,23 @@ def test_buscar_por_id_resolve_entidades_relacionadas(db_session):
 
 def test_buscar_por_id_inexistente_retorna_none(db_session):
     assert repo.buscar_por_id(db_session, 999999) is None
+
+
+def test_cnq21_ordenacao_com_empates_e_estavel_por_id(db_session):
+    """RNF-09/CA-005: quando o campo ordenado empata (mesma data), o
+    desempate por `id` garante que a mesma ordem se repita em toda consulta,
+    inclusive entre páginas."""
+    mesma_data = datetime(2026, 3, 1, 8, 0, 0)
+    ids = [MovimentacaoBuilder(data_solicitacao=mesma_data).build(db_session).id for _ in range(5)]
+
+    pagina1, total = repo.listar(db_session, page=1, page_size=2, ordenar_por="dataSolicitacao", direcao="asc")
+    pagina2, _ = repo.listar(db_session, page=2, page_size=2, ordenar_por="dataSolicitacao", direcao="asc")
+    pagina3, _ = repo.listar(db_session, page=3, page_size=2, ordenar_por="dataSolicitacao", direcao="asc")
+
+    assert total == 5
+    obtidos_em_ordem = [m.id for m in [*pagina1, *pagina2, *pagina3]]
+    assert obtidos_em_ordem == sorted(ids)
+
+    # repetir a mesma consulta produz exatamente a mesma ordem (determinística)
+    repeticao, _ = repo.listar(db_session, page=1, page_size=2, ordenar_por="dataSolicitacao", direcao="asc")
+    assert [m.id for m in repeticao] == [m.id for m in pagina1]

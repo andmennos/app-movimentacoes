@@ -1,7 +1,11 @@
 from datetime import datetime, timedelta
 
+import pytest
+
 from app.models import StatusMovimentacao
 from tests.builders import ColaboradorBuilder, MovimentacaoBuilder
+
+pytestmark = pytest.mark.usefixtures("admin_headers")
 
 
 def test_ca001_listagem_default_traz_primeira_pagina(client, db_session):
@@ -53,6 +57,33 @@ def test_ca004_busca_por_matricula_exata_e_nome_parcial(client, db_session):
 
     assert por_matricula.json()["total"] == 1
     assert por_nome.json()["total"] == 1
+
+
+def test_e2e03_busca_por_id_da_movimentacao(client, db_session):
+    """spec.md RC-46/T-84 — termo numérico filtra por ID sem remover a busca
+    textual por matrícula/nome (as três continuam funcionando). Não assume
+    `total == 1`: nomes/matrículas auto-gerados por outros builders no mesmo
+    teste podem coincidir por substring com o ID buscado (contador global) —
+    a asserção real é que o alvo aparece e o ID inexistente não aparece."""
+    colaborador = ColaboradorBuilder(matricula="M777777", nome="Bruno Salgado").build(db_session)
+    alvo = MovimentacaoBuilder(colaborador_id=colaborador.id).build(db_session)
+    MovimentacaoBuilder().build(db_session)
+    db_session.commit()
+
+    por_id = client.get("/movimentacoes", params={"busca": str(alvo.id)})
+    assert alvo.id in [item["id"] for item in por_id.json()["items"]]
+
+    por_matricula = client.get("/movimentacoes", params={"busca": "M777777"})
+    assert por_matricula.json()["total"] == 1
+    assert por_matricula.json()["items"][0]["id"] == alvo.id
+
+    por_nome = client.get("/movimentacoes", params={"busca": "salgado"})
+    assert por_nome.json()["total"] == 1
+    assert por_nome.json()["items"][0]["id"] == alvo.id
+
+    id_inexistente = 999_999_999
+    sem_correspondencia = client.get("/movimentacoes", params={"busca": str(id_inexistente)})
+    assert alvo.id not in [item["id"] for item in sem_correspondencia.json()["items"]]
 
 
 def test_ca005_ordenacao_valida_e_invalida(client, db_session):

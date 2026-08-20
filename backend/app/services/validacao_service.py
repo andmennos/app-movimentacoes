@@ -1,5 +1,11 @@
-"""Orquestra `POST /validar` (plan.md §6). Único ponto que decide status e
-persiste auditoria — a decisão de validade em si pertence a `validation/`.
+"""Executa o motor de validação sobre uma movimentação já carregada e grava a
+auditoria correspondente (spec.md §7.5, plan.md §8).
+
+Não decide status de negócio, não toca na fila e não registra histórico de
+processamento — isso é responsabilidade exclusiva do orquestrador
+(`processing/orchestrator.py`, INV-08). Chamado somente por ele, que por sua
+vez é chamado tanto pelo Worker quanto por `POST /validar` (INV-09) — nenhuma
+das 34 regras é reimplementada em nenhum dos dois caminhos.
 """
 
 from __future__ import annotations
@@ -9,34 +15,28 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Movimentacao, ResultadoValidacao, StatusMovimentacao
-from app.models import ValidacaoAuditoria
-from app.repositories import auditoria_repository, movimentacao_repository
-from app.services.exceptions import MovimentacaoNaoEncontrada
+from app.models import Movimentacao, OrigemExecucao, ResultadoValidacao, ValidacaoAuditoria
+from app.repositories import auditoria_repository
 from app.services.movimentacao_service import montar_contexto
-from app.validation import types as vt
 from app.validation.engine import executar, resolver_resultado
 
-__all__ = ["MovimentacaoNaoEncontrada", "validar"]
-
-_STATUS_POR_RESULTADO = {
-    vt.ResultadoValidacao.APROVADA: StatusMovimentacao.APROVADA,
-    vt.ResultadoValidacao.REPROVADA: StatusMovimentacao.REPROVADA,
-    vt.ResultadoValidacao.AGUARDANDO_APROVACAO: StatusMovimentacao.PENDENTE,
-}
+__all__ = ["validar"]
 
 
-def validar(session: Session, movimentacao_id: int) -> tuple[Movimentacao, ValidacaoAuditoria]:
-    """Fluxo de `plan.md` §6. Não há `try/except` ao redor de `executar`:
-    uma exceção não tratada propaga (INV-04) — a sessão nunca chega a commit,
-    e `get_db` reverte a transação (database.py)."""
-    movimentacao = movimentacao_repository.carregar_para_validacao(session, movimentacao_id)
-    if movimentacao is None:
-        raise MovimentacaoNaoEncontrada(movimentacao_id)
+def validar(
+    session: Session, movimentacao: Movimentacao, origem_execucao: OrigemExecucao
+) -> ValidacaoAuditoria:
+    """spec.md §7.5: monta o contexto, executa as 34 regras e grava a
+    auditoria (INV-07: exatamente um registro por execução concluída).
 
+    Não há `try/except` ao redor de `executar`: uma exceção não tratada
+    propaga (INV-04) para o orquestrador, que decide o que fazer com a falha
+    técnica — a validação não foi concluída, não há resultado de negócio
+    confiável a persistir.
+    """
     ctx = montar_contexto(session, movimentacao)
     inconsistencias = executar(ctx)
-    resultado = resolver_resultado(inconsistencias, ctx.aprovacoes)
+    resultado = resolver_resultado(inconsistencias)
 
     agora = datetime.now(timezone.utc).replace(tzinfo=None)
     auditoria = auditoria_repository.criar(
@@ -46,12 +46,11 @@ def validar(session: Session, movimentacao_id: int) -> tuple[Movimentacao, Valid
         inconsistencias=inconsistencias,
         versao_motor=settings.versao_motor,
         data_hora=agora,
+        origem_execucao=origem_execucao,
+        solicitante_usuario_id=movimentacao.solicitante_usuario_id,
     )
 
     movimentacao.resultado_ultima_validacao = ResultadoValidacao(resultado.value)
     movimentacao.data_ultima_validacao = agora
-    movimentacao.status = _STATUS_POR_RESULTADO[resultado]
 
-    session.commit()
-    session.refresh(movimentacao)
-    return movimentacao, auditoria
+    return auditoria

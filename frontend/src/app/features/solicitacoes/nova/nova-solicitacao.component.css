@@ -1,0 +1,88 @@
+.pagina {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.cabecalho {
+  margin-bottom: 1rem;
+}
+
+.cartao {
+  background: var(--cor-superficie);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+  padding: 1.5rem;
+}
+
+.formulario {
+  display: flex;
+  flex-direction: column;
+}
+
+.formulario label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.formulario select {
+  width: 100%;
+}
+
+.autocomplete {
+  position: relative;
+}
+
+.autocomplete input {
+  width: 100%;
+}
+
+.lista-sugestoes {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 0.2rem);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  background: var(--cor-superficie);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.lista-sugestoes li {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+
+.lista-sugestoes li:hover {
+  background: #f7f9ff;
+  color: var(--cor-primaria);
+}
+
+.sugestoes-carregando {
+  position: absolute;
+  top: calc(100% + 0.2rem);
+  left: 0;
+  font-size: 0.78rem;
+  color: var(--cor-texto-suave);
+}
+
+.formulario button {
+  margin-top: 1.5rem;
+  align-self: flex-start;
+}
+
+.erro-formulario {
+  color: var(--cor-reprovada-fg);
+  font-size: 0.85rem;
+  margin: 1rem 0 0 0;
+}

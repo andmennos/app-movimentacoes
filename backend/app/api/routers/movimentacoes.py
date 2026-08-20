@@ -1,4 +1,5 @@
 import math
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -10,19 +11,33 @@ from app.api.schemas import (
     CentroCustoResumo,
     ColaboradorDetalhe,
     ColaboradorResumo,
+    CriarMovimentacaoRequest,
+    CriarMovimentacaoResponse,
+    DecidirAprovacaoRequest,
+    DecidirAprovacaoResponse,
     DepartamentoResumo,
     EstruturaResumo,
+    EventoHistoricoResponse,
     GestorResumo,
+    ImpedimentoResponse,
     InconsistenciaResponse,
     MovimentacaoDetalheResponse,
     MovimentacaoItem,
     MovimentacaoListaResponse,
+    ProcessamentoResponse,
+    SolicitanteResumo,
     UltimaValidacaoResponse,
 )
 from app.database import get_db
-from app.models import Movimentacao, StatusMovimentacao, TipoMovimentacao
+from app.models import Movimentacao, StatusMovimentacao, TipoAprovacao, TipoMovimentacao, Usuario
 from app.repositories import aprovacao_repository, auditoria_repository, movimentacao_repository
+from app.repositories import historico_processamento_repository as historico_repo
+from app.security import object_scope
+from app.security.dependencies import require_scope
+from app.security.permissions import SCOPE_MOVIMENTACOES_APPROVE, SCOPE_MOVIMENTACOES_CREATE, SCOPE_MOVIMENTACOES_READ
+from app.services import aprovacao_service, detalhe_service, motivo_service, solicitacao_service
 from app.services.exceptions import MovimentacaoNaoEncontrada
+from app.services.movimentacao_service import montar_contexto
 
 router = APIRouter(prefix="/movimentacoes", tags=["movimentacoes"])
 
@@ -36,7 +51,9 @@ def listar_movimentacoes(
     ordenar_por: str = Query("dataSolicitacao", alias="ordenarPor"),
     direcao: Literal["asc", "desc"] = Query("desc"),
     db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_scope(SCOPE_MOVIMENTACOES_READ)),
 ) -> MovimentacaoListaResponse:
+    ids_permitidos = object_scope.ids_colaboradores_permitidos(db, usuario)
     itens, total = movimentacao_repository.listar(
         db,
         page=page,
@@ -45,12 +62,14 @@ def listar_movimentacoes(
         busca=busca,
         ordenar_por=ordenar_por,
         direcao=direcao,
+        colaborador_ids_permitidos=ids_permitidos,
     )
     page_size_efetivo = min(page_size, movimentacao_repository.PAGE_SIZE_MAXIMO)
     total_pages = math.ceil(total / page_size_efetivo) if total else 0
 
+    aprovacoes_por_mov = aprovacao_repository.listar_por_movimentacoes(db, [m.id for m in itens])
     return MovimentacaoListaResponse(
-        items=[_item(m) for m in itens],
+        items=[_item(db, m, aprovacoes_por_mov.get(m.id, [])) for m in itens],
         page=page,
         page_size=page_size_efetivo,
         total=total,
@@ -58,19 +77,81 @@ def listar_movimentacoes(
     )
 
 
+@router.post("", response_model=CriarMovimentacaoResponse, status_code=201)
+def criar_movimentacao(
+    payload: CriarMovimentacaoRequest,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_scope(SCOPE_MOVIMENTACOES_CREATE)),
+) -> CriarMovimentacaoResponse:
+    mov = solicitacao_service.criar(db, payload, usuario)
+    return CriarMovimentacaoResponse(
+        id=mov.id, tipo=mov.tipo.value, status=mov.status.value, data_solicitacao=mov.data_solicitacao
+    )
+
+
 @router.get("/{movimentacao_id}", response_model=MovimentacaoDetalheResponse)
-def detalhar_movimentacao(movimentacao_id: int, db: Session = Depends(get_db)) -> MovimentacaoDetalheResponse:
+def detalhar_movimentacao(
+    movimentacao_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_scope(SCOPE_MOVIMENTACOES_READ)),
+) -> MovimentacaoDetalheResponse:
     mov = movimentacao_repository.buscar_por_id(db, movimentacao_id)
-    if mov is None:
+    if mov is None or not object_scope.pode_visualizar_movimentacao(db, usuario, mov.colaborador_id):
+        # RC-16: objeto fora do escopo responde 404, igual a "não existe" —
+        # nunca revela que uma movimentação inacessível existe.
         raise MovimentacaoNaoEncontrada(movimentacao_id)
 
     aprovacoes_orm = aprovacao_repository.listar_por_movimentacao(db, movimentacao_id)
     ultima = auditoria_repository.buscar_ultima(db, movimentacao_id)
+    agora = datetime.now(timezone.utc).replace(tzinfo=None)
+    impedimentos, processamento = detalhe_service.compor(db, mov, agora)
+    eventos = historico_repo.listar_por_movimentacao(db, movimentacao_id)
+    ctx = montar_contexto(db, mov)
+    motivo = motivo_service.montar_motivo_resumo(
+        mov.status, ctx, ultima.total_inconsistencias if ultima else None
+    )
 
-    return _detalhe(mov, aprovacoes_orm, ultima)
+    return _detalhe(mov, aprovacoes_orm, ultima, impedimentos, processamento, eventos, motivo)
 
 
-def _item(mov: Movimentacao) -> MovimentacaoItem:
+@router.post("/{movimentacao_id}/aprovacoes/{tipo}/decidir", response_model=DecidirAprovacaoResponse)
+def decidir_aprovacao(
+    movimentacao_id: int,
+    tipo: TipoAprovacao,
+    payload: DecidirAprovacaoRequest,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_scope(SCOPE_MOVIMENTACOES_APPROVE)),
+) -> DecidirAprovacaoResponse:
+    aprovacao = aprovacao_service.decidir(db, movimentacao_id, tipo, usuario, payload.decisao, payload.justificativa)
+    return DecidirAprovacaoResponse(
+        movimentacao_id=movimentacao_id,
+        tipo=aprovacao.tipo.value,
+        estado=aprovacao.estado.value,
+        data_decisao=aprovacao.data_decisao,
+        movimentacao_status=aprovacao.movimentacao.status.value,
+    )
+
+
+def _solicitante(mov: Movimentacao) -> SolicitanteResumo | None:
+    if mov.solicitante is None:
+        return None
+    return SolicitanteResumo(id=mov.solicitante.id, username=mov.solicitante.username, perfil=mov.solicitante.perfil.value)
+
+
+def _item(db: Session, mov: Movimentacao, aprovacoes_pre_carregadas: list) -> MovimentacaoItem:
+    # T-68 — aprovações em lote (1 query pra página, não 1 por linha);
+    # auditoria só é buscada quando o status realmente precisa dela
+    # (REPROVADA); G04/data-última-promoção puladas via apenas_para_motivo
+    # (motivo_service nunca lê nenhuma das duas).
+    total_inconsistencias = None
+    if mov.status == StatusMovimentacao.REPROVADA:
+        ultima = auditoria_repository.buscar_ultima(db, mov.id)
+        total_inconsistencias = ultima.total_inconsistencias if ultima else None
+    ctx = montar_contexto(
+        db, mov, aprovacoes_pre_carregadas=aprovacoes_pre_carregadas, apenas_para_motivo=True
+    )
+    motivo = motivo_service.montar_motivo_resumo(mov.status, ctx, total_inconsistencias)
+
     return MovimentacaoItem(
         id=mov.id,
         tipo=mov.tipo.value,
@@ -82,10 +163,14 @@ def _item(mov: Movimentacao) -> MovimentacaoItem:
         resultado_ultima_validacao=(
             mov.resultado_ultima_validacao.value if mov.resultado_ultima_validacao else None
         ),
+        solicitante=_solicitante(mov),
+        motivo_resumo=motivo,
     )
 
 
-def _detalhe(mov: Movimentacao, aprovacoes_orm, ultima) -> MovimentacaoDetalheResponse:
+def _detalhe(
+    mov: Movimentacao, aprovacoes_orm, ultima, impedimentos, processamento, eventos, motivo: str
+) -> MovimentacaoDetalheResponse:
     return MovimentacaoDetalheResponse(
         id=mov.id,
         tipo=mov.tipo.value,
@@ -98,8 +183,8 @@ def _detalhe(mov: Movimentacao, aprovacoes_orm, ultima) -> MovimentacaoDetalheRe
             ativo=mov.colaborador.ativo,
         ),
         cargo_atual=(
-            _cargo(mov.colaborador.cargo)
-            if mov.tipo == TipoMovimentacao.PROMOCAO and mov.colaborador.cargo
+            _cargo(mov.cargo_origem)
+            if mov.tipo == TipoMovimentacao.PROMOCAO and mov.cargo_origem
             else None
         ),
         cargo_destino=_cargo(mov.cargo_destino) if mov.cargo_destino else None,
@@ -111,8 +196,19 @@ def _detalhe(mov: Movimentacao, aprovacoes_orm, ultima) -> MovimentacaoDetalheRe
         estrutura_destino=_estrutura(mov.estrutura_destino) if mov.estrutura_destino else None,
         gestor_origem=_gestor(mov.gestor_origem) if mov.gestor_origem else None,
         gestor_destino=_gestor(mov.gestor_destino) if mov.gestor_destino else None,
+        solicitante=_solicitante(mov),
+        motivo_resumo=motivo,
         aprovacoes=[_aprovacao(a) for a in aprovacoes_orm],
         ultima_validacao=_ultima_validacao(ultima) if ultima else None,
+        impedimentos=[
+            ImpedimentoResponse(origem=i.origem, codigo=i.codigo, mensagem=i.mensagem) for i in impedimentos
+        ],
+        processamento=ProcessamentoResponse(
+            estado=processamento.estado,
+            pode_validar_manualmente=processamento.pode_validar_manualmente,
+            motivo_validacao_manual=processamento.motivo_validacao_manual,
+        ),
+        historico_processamento=[_evento(e) for e in eventos],
     )
 
 
@@ -146,6 +242,18 @@ def _aprovacao(a) -> AprovacaoResponse:
             else None
         ),
         data_decisao=a.data_decisao,
+    )
+
+
+def _evento(evento) -> EventoHistoricoResponse:
+    return EventoHistoricoResponse(
+        tipo_evento=evento.tipo_evento.value,
+        data_hora=evento.data_hora,
+        origem=evento.origem.value,
+        mensagem=evento.mensagem,
+        detalhe_sanitizado=evento.detalhe_sanitizado,
+        ator=evento.ator.username if evento.ator else None,
+        solicitante=evento.solicitante.username if evento.solicitante else None,
     )
 
 

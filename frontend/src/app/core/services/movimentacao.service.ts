@@ -21,11 +21,11 @@ export interface ListarMovimentacoesParams {
 }
 
 /**
- * Único ponto de comunicação com o backend (RC-10, CA-039 — nunca decide
- * validade, só consulta e repassa comandos). O gatilho normal do produto
- * continua sendo automático (producer + Worker); `validar()` existe
- * exclusivamente para o botão de validação manual do detalhe, mostrado só
- * quando a solicitação ainda não foi efetivamente aprovada (ADR-0010) — não
+ * Único ponto de comunicação com o backend (RC-10 — nunca decide validade,
+ * só consulta e repassa comandos). O gatilho normal do produto continua
+ * sendo automático (producer + Worker); `validar()` existe exclusivamente
+ * para o botão de validação manual do detalhe, mostrado somente quando o
+ * backend retorna `processamento.podeValidarManualmente=true` (RC-13) — não
  * é chamado em nenhum outro fluxo da listagem ou do carregamento normal do
  * detalhe.
  */
@@ -67,12 +67,13 @@ export class MovimentacaoService {
 
 export const RESULTADO_LABEL: Record<ResultadoValidacao, string> = {
   APROVADA: 'Aprovada',
-  REPROVADA: 'Reprovada',
-  AGUARDANDO_APROVACAO: 'Aguardando aprovação'
+  REPROVADA: 'Reprovada'
 };
 
 export const STATUS_LABEL: Record<StatusMovimentacao, string> = {
+  AGUARDANDO_APROVACAO: 'Aguardando aprovação',
   PENDENTE: 'Pendente',
   APROVADA: 'Aprovada',
-  REPROVADA: 'Reprovada'
+  REPROVADA: 'Reprovada',
+  BLOQUEADA: 'Bloqueada'
 };

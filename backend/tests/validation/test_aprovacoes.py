@@ -10,12 +10,13 @@ from tests.validation.factories import (
 )
 
 
-def test_tipos_exigidos_por_tipo_conforme_spec_5_2():
+def test_tipos_exigidos_por_tipo_conforme_spec_5():
     assert set(tipos_exigidos(contexto_transferencia())) == {
         TipoAprovacao.GESTOR_ORIGEM,
         TipoAprovacao.GESTOR_DESTINO,
+        TipoAprovacao.RH,
     }
-    assert set(tipos_exigidos(contexto_centro_custo())) == {TipoAprovacao.GESTOR_DESTINO}
+    assert set(tipos_exigidos(contexto_centro_custo())) == {TipoAprovacao.GESTOR_DESTINO, TipoAprovacao.RH}
 
 
 def test_promocao_sem_aprovacao_adicional_quando_cargo_nao_exige():

@@ -1,13 +1,24 @@
-"""T-26 (revisão) — fluxo automático de ponta a ponta: seed-like data →
-producer → `JobValidacao` → Worker → auditoria → `GET` detalhe. Complementa
-`test_fluxo_completo.py`, que cobre `POST /validar` como adaptador síncrono
-técnico — este arquivo cobre o gatilho **automático** que o Angular observa
-apenas por leitura.
+"""Fluxo automático de ponta a ponta: seed-like data → producer → gate →
+`JobValidacao` → Worker → orquestrador → auditoria → efetivação → `GET`
+detalhe. Complementa `test_fluxo_completo.py` (que cobre `POST /validar` como
+adaptador síncrono) e `test_orchestrator.py` (que cobre os cenários de
+corrida/duplicidade/stale em detalhe).
 """
 
-from app.models import EstadoAprovacao, JobValidacao, StatusMovimentacao, TipoMovimentacao, ValidacaoAuditoria
+import pytest
+
+from app.models import (
+    Colaborador,
+    EstadoAprovacao,
+    JobValidacao,
+    StatusMovimentacao,
+    TipoMovimentacao,
+    ValidacaoAuditoria,
+)
 from app.processing import producer, worker
 from tests.builders import ColaboradorBuilder, DepartamentoBuilder, MovimentacaoBuilder, criar_aprovacoes_exigidas
+
+pytestmark = pytest.mark.usefixtures("admin_headers")
 
 
 def _transferencia_valida(db_session):
@@ -24,6 +35,8 @@ def test_fluxo_automatico_aprovada_ponta_a_ponta(client, db_session):
     mov = _transferencia_valida(db_session)
     criar_aprovacoes_exigidas(db_session, mov, estado=EstadoAprovacao.APROVADA)
     db_session.commit()
+    destino_id = mov.departamento_destino_id
+    colaborador_id = mov.colaborador_id
 
     resultado_producer = producer.executar(db_session)
     assert resultado_producer.agendadas == 1
@@ -36,16 +49,13 @@ def test_fluxo_automatico_aprovada_ponta_a_ponta(client, db_session):
     assert corpo["status"] == "APROVADA"
     assert corpo["ultimaValidacao"]["resultado"] == "APROVADA"
     assert corpo["ultimaValidacao"]["inconsistencias"] == []
+    assert corpo["processamento"]["podeValidarManualmente"] is False
+    assert any(e["tipoEvento"] == "MOVIMENTACAO_EFETIVADA" for e in corpo["historicoProcessamento"])
     assert db_session.query(ValidacaoAuditoria).filter_by(movimentacao_id=mov.id).count() == 1
+    assert db_session.get(Colaborador, colaborador_id).departamento_id == destino_id
 
 
 def test_fluxo_automatico_reprovada_por_inconsistencias_ponta_a_ponta(client, db_session):
-    # departamentos com gestor válido dos dois lados (senão GESTOR_ORIGEM/
-    # DESTINO ficam sem responsável esperado e o gate classifica como
-    # ANOMALO — não é o que este teste quer isolar). O destino, além disso,
-    # está inativo: o único defeito de regra é T04; a aprovação em si
-    # permanece íntegra, então o gate agenda normalmente e é a engine, no
-    # Worker, que reprova.
     dep_origem = DepartamentoBuilder(gestor_id=ColaboradorBuilder().build(db_session).id).build(db_session)
     dep_destino = DepartamentoBuilder(
         ativo=False, gestor_id=ColaboradorBuilder().build(db_session).id
@@ -59,7 +69,7 @@ def test_fluxo_automatico_reprovada_por_inconsistencias_ponta_a_ponta(client, db
     db_session.commit()
 
     resultado_producer = producer.executar(db_session)
-    assert resultado_producer.agendadas == 1  # gate só olha estado/integridade das aprovações, não T04
+    assert resultado_producer.agendadas == 1  # gate só olha o estado das aprovações, não T04
 
     worker.processar_um_job(db_session)
 
@@ -69,9 +79,10 @@ def test_fluxo_automatico_reprovada_por_inconsistencias_ponta_a_ponta(client, db
     assert corpo["ultimaValidacao"]["resultado"] == "REPROVADA"
     assert len(corpo["ultimaValidacao"]["inconsistencias"]) >= 1
     assert any(i["codigo"] == "T04" for i in corpo["ultimaValidacao"]["inconsistencias"])
+    assert corpo["processamento"]["podeValidarManualmente"] is False
 
 
-def test_fluxo_automatico_pendente_sem_job_sem_validacao(client, db_session):
+def test_fluxo_automatico_aguardando_aprovacao_sem_job_sem_validacao(client, db_session):
     mov = _transferencia_valida(db_session)
     criar_aprovacoes_exigidas(db_session, mov, estado=EstadoAprovacao.PENDENTE)
     db_session.commit()
@@ -85,8 +96,10 @@ def test_fluxo_automatico_pendente_sem_job_sem_validacao(client, db_session):
 
     detalhe = client.get(f"/movimentacoes/{mov.id}")
     corpo = detalhe.json()
-    assert corpo["status"] == "PENDENTE"
+    assert corpo["status"] == "AGUARDANDO_APROVACAO"
     assert corpo["ultimaValidacao"] is None
+    assert len(corpo["impedimentos"]) >= 1
+    assert corpo["processamento"]["podeValidarManualmente"] is False
     assert db_session.query(ValidacaoAuditoria).filter_by(movimentacao_id=mov.id).count() == 0
 
 
@@ -101,30 +114,17 @@ def test_fluxo_automatico_reprovada_pelo_gate_bloqueia_sem_job_nem_auditoria(cli
 
     detalhe = client.get(f"/movimentacoes/{mov.id}")
     corpo = detalhe.json()
-    assert corpo["status"] == "REPROVADA"
+    assert corpo["status"] == "BLOQUEADA"
     # bloqueada pelo gate, não pela engine: nunca houve validação executada
     assert corpo["ultimaValidacao"] is None
+    assert any(i["codigo"] == "APROVACAO_REPROVADA" for i in corpo["impedimentos"])
+    assert corpo["processamento"]["podeValidarManualmente"] is False
     assert db_session.query(ValidacaoAuditoria).filter_by(movimentacao_id=mov.id).count() == 0
 
 
-def test_post_validar_continua_funcional_como_adaptador_sincrono(client, db_session):
-    """`POST /validar` permanece disponível e funcional (spec §7.3, RC-15),
-    usado diretamente sem passar por producer/worker."""
-    mov = _transferencia_valida(db_session)
-    criar_aprovacoes_exigidas(db_session, mov, estado=EstadoAprovacao.APROVADA)
-    db_session.commit()
+def test_worker_e_manual_usam_o_mesmo_orquestrador(db_session):
+    """INV-09: prova, por identidade de objeto, que não existem duas
+    implementações do caso de uso de processamento."""
+    from app.processing import orchestrator
 
-    resposta = client.post("/validar", json={"movimentacaoId": mov.id})
-
-    assert resposta.status_code == 200
-    assert resposta.json()["status"] == "APROVADA"
-    # nenhum job foi criado — o adaptador síncrono não passa pela fila
-    assert db_session.query(JobValidacao).filter_by(movimentacao_id=mov.id).count() == 0
-
-
-def test_worker_usa_o_mesmo_validacao_service_do_endpoint_sincrono(db_session):
-    """INV-11: prova, por identidade de objeto, que não existem duas
-    implementações do caso de uso de validação."""
-    from app.services import validacao_service
-
-    assert worker.validacao_service is validacao_service
+    assert worker.orchestrator is orchestrator

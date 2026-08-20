@@ -1,0 +1,93 @@
+<div class="pagina">
+  <header class="cabecalho">
+    <h1>Nova solicitação</h1>
+  </header>
+
+  @if (carregandoReferencias()) {
+    <div class="estado estado-carregando" role="status">Carregando dados do formulário…</div>
+  } @else {
+    <form class="cartao formulario" (ngSubmit)="enviar()">
+      <label for="tipo">Tipo</label>
+      <select id="tipo" name="tipo" [(ngModel)]="tipo" (ngModelChange)="onTipoMudou()">
+        @for (opcao of tipos; track opcao.valor) {
+          <option [value]="opcao.valor">{{ opcao.rotulo }}</option>
+        }
+      </select>
+
+      <label for="colaborador">Colaborador</label>
+      <div class="autocomplete">
+        <input
+          type="text"
+          id="colaborador"
+          name="colaborador"
+          placeholder="Digite o nome ou a matrícula"
+          autocomplete="off"
+          [ngModel]="colaboradorTexto"
+          (ngModelChange)="onColaboradorTextoMudou($event)"
+          required
+        />
+        @if (buscandoColaborador()) {
+          <div class="sugestoes-carregando">Buscando…</div>
+        } @else if (sugestoesColaborador().length > 0) {
+          <ul class="lista-sugestoes">
+            @for (colaborador of sugestoesColaborador(); track colaborador.id) {
+              <li (click)="selecionarColaborador(colaborador)">
+                {{ colaborador.nome }} ({{ colaborador.matricula }})
+              </li>
+            }
+          </ul>
+        }
+      </div>
+
+      @if (tipo === 'TRANSFERENCIA') {
+        <label for="destino">Departamento de destino</label>
+        <select id="destino" name="destino" [(ngModel)]="destinoId" required>
+          <option [ngValue]="null" disabled>Selecione um departamento</option>
+          @for (departamento of departamentos(); track departamento.id) {
+            <option [ngValue]="departamento.id">{{ departamento.nome }}</option>
+          }
+        </select>
+      } @else if (tipo === 'PROMOCAO') {
+        <label for="destino">Cargo de destino</label>
+        <select id="destino" name="destino" [(ngModel)]="destinoId" required>
+          <option [ngValue]="null" disabled>Selecione um cargo</option>
+          @for (cargo of cargos(); track cargo.id) {
+            <option [ngValue]="cargo.id">{{ cargo.nome }}</option>
+          }
+        </select>
+      } @else if (tipo === 'MUDANCA_CENTRO_CUSTO') {
+        <label for="destino">Centro de custo de destino</label>
+        <select id="destino" name="destino" [(ngModel)]="destinoId" required>
+          <option [ngValue]="null" disabled>Selecione um centro de custo</option>
+          @for (centro of centrosCusto(); track centro.id) {
+            <option [ngValue]="centro.id">{{ centro.nome }}</option>
+          }
+        </select>
+      } @else if (tipo === 'TROCA_GESTOR') {
+        <label for="destino">Novo gestor</label>
+        <select id="destino" name="destino" [(ngModel)]="destinoId" required>
+          <option [ngValue]="null" disabled>Selecione um gestor</option>
+          @for (gestor of gestores(); track gestor.id) {
+            <option [ngValue]="gestor.id">{{ gestor.nome }} ({{ gestor.matricula }})</option>
+          }
+        </select>
+      } @else {
+        <label for="destino">Estrutura de destino</label>
+        <select id="destino" name="destino" [(ngModel)]="destinoId" required>
+          <option [ngValue]="null" disabled>Selecione uma estrutura</option>
+          @for (estrutura of estruturas(); track estrutura.id) {
+            <option [ngValue]="estrutura.id">{{ estrutura.nome }}</option>
+          }
+        </select>
+      }
+
+      @if (erro()) {
+        <p class="erro-formulario" role="alert">{{ erro() }}</p>
+      }
+
+      <button type="submit" class="primario" [disabled]="enviando() || !colaboradorId || !destinoId">
+        {{ enviando() ? 'Enviando…' : 'Enviar solicitação' }}
+      </button>
+    </form>
+  }
+</div>
